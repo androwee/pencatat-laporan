@@ -342,6 +342,22 @@ export default function Home() {
     setShowJobModal(true);
   };
 
+  // Ulangi transaksi: buka form TAMBAH (id kosong, jadi simpan akan
+  // membuat transaksi baru, bukan menimpa yang lama) dengan pelanggan
+  // dan layanan yang sama, tanggal hari ini, dan status Belum bayar
+  // dengan pembayaran 0 — transaksi baru belum lunas sampai dibayar.
+  // Tidak langsung tersimpan: pengguna tetap meninjau dan menekan
+  // Simpan sendiri, supaya tidak ada duplikat yang tidak disengaja.
+  const duplicateJob = (job) => {
+    setJobCustomerMode("existing");
+    setJobForm({ id: "", customer_id: String(job.customer_id), job_date: todayWib(), status: "belum", note: job.note || "", paid_amount: "" });
+    setJobItems(job.items?.length
+      ? job.items.map((it) => ({ service_type: it.service_type, qty: it.qty, unit: it.unit, unit_price: String(it.unit_price) }))
+      : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: String(job.amount) }]);
+    loadCustomers();
+    setShowJobModal(true);
+  };
+
   const openCustomerModal = (customer) => {
     if (customer) setCustomerForm({ id: customer.id, name: customer.name, address: customer.address, phone: customer.phone });
     else setCustomerForm(emptyCustomer);
@@ -1077,6 +1093,7 @@ export default function Home() {
                   {j.note && <div className="text-zinc-400 text-sm mt-1">{j.note}</div>}
                   <div className="flex gap-2 mt-3 flex-wrap">
                     <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Detail</button>
+                    <button onClick={() => duplicateJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Ulangi</button>
                     <button onClick={() => openJobModal(j)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
                     <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </div>
@@ -1093,6 +1110,7 @@ export default function Home() {
                   <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status)}</td>
                   <td className="p-3 whitespace-nowrap">
                     <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Detail</button>
+                    <button onClick={() => duplicateJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Ulangi</button>
                     <button onClick={() => openJobModal(j)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
                     <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </td>
@@ -1517,6 +1535,7 @@ export default function Home() {
             {remainingOf(detailJob) > 0 && (
               <button onClick={() => markJobPaid(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tandai lunas (sisa {fmtRp(remainingOf(detailJob))})</button>
             )}
+            <button onClick={() => { const j = detailJob; setDetailJob(null); duplicateJob(j); }} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Ulangi transaksi</button>
             <div className="grid grid-cols-3 gap-2">
               <button onClick={() => downloadInvoice(detailJob)} aria-label="Unduh Invoice (PDF)" title="Unduh Invoice (PDF)" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
