@@ -42,6 +42,15 @@ input[type="month"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }
 
+/* Input pil halaman login: bulat penuh, abu-abu muda di mode terang. */
+.login-input {
+  border-radius: 9999px;
+}
+.theme-light .login-input {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
 /* Light mode: same components, light surfaces. Toggled by .theme-light on <html>. */
 .theme-light body {
   background: #f4f5f7;

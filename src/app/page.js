@@ -92,6 +92,7 @@ export default function Home() {
   const [username, setUsername] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  const [showPassword, setShowPassword] = useState(false);
   const [tab, setTab] = useState("dashboard");
   const [error, setError] = useState("");
   const [dash, setDash] = useState(null);
@@ -599,28 +600,60 @@ export default function Home() {
   if (view === "loading") return <main className="max-w-3xl mx-auto p-6 text-zinc-400">Memuat…</main>;
 
   if (view === "login") {
+    const fieldIcon = (d) => (
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+    );
     return (
-      <main className="max-w-md mx-auto px-4 pt-16 pb-24">
-        <div className="flex flex-col items-center text-center gap-2">
-          <AppLogo size={80} theme={theme} />
-          <h1 className="font-semibold tracking-tight text-3xl">Pencatat Laporan</h1>
-          <p className="text-zinc-400">Pencatat Pelanggan Jasa</p>
+      <main className="min-h-screen flex flex-col px-4 pb-16">
+        <div className="flex justify-end pt-4">
+          <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
+            aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
+            title={theme === "dark" ? "Mode terang" : "Mode gelap"}
+            className="bg-panel border border-line rounded-full p-2.5 text-zinc-400 hover:text-white shadow">
+            {theme === "dark"
+              ? fieldIcon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
+              : fieldIcon(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)}
+          </button>
         </div>
-        <div className="bg-panel border border-line rounded-2xl p-5 mt-6 relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-persona" />
-          <form onSubmit={handleLogin} className="space-y-4">
-            <label className="block text-sm font-medium">Username
-              <input className="mt-1" name="username" autoComplete="username" required
-                value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} />
-            </label>
-            <label className="block text-sm font-medium">Password
-              <input className="mt-1" type="password" autoComplete="current-password" required
-                value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
-            </label>
-            {loginError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{loginError}</p>}
-            <button type="submit" className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3 rounded-xl">Masuk</button>
-          </form>
-          <p className="text-zinc-400 text-xs text-center mt-4">Akun diatur lewat environment variable di Cloudflare, bukan dari database.</p>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-full max-w-sm">
+            <div className="flex flex-col items-center text-center gap-3">
+              <AppLogo size={96} theme={theme} />
+              <h1 className="font-bold text-3xl tracking-tight">Login</h1>
+              <p className="text-zinc-400 -mt-1">Silakan masuk untuk melanjutkan.</p>
+            </div>
+            <div className="bg-panel border border-line rounded-[28px] p-6 mt-6 shadow-xl">
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none">
+                    {fieldIcon(<><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>)}
+                  </span>
+                  <input className="login-input pl-11" name="username" autoComplete="username" required
+                    placeholder="Username" aria-label="Username"
+                    value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} />
+                </div>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none">
+                    {fieldIcon(<><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>)}
+                  </span>
+                  <input className="login-input pl-11 pr-11" type={showPassword ? "text" : "password"}
+                    autoComplete="current-password" required placeholder="Password" aria-label="Password"
+                    value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1">
+                    {showPassword
+                      ? fieldIcon(<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 6.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></>)
+                      : fieldIcon(<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>)}
+                  </button>
+                </div>
+                {loginError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{loginError}</p>}
+                <button type="submit" className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Masuk</button>
+              </form>
+              <p className="text-zinc-400 text-xs text-center mt-4">Akun diatur lewat environment variable di Cloudflare, bukan dari database.</p>
+            </div>
+            <p className="text-zinc-400 text-xs text-center mt-4">Pencatat Laporan — Pencatat Pelanggan Jasa</p>
+          </div>
         </div>
       </main>
     );
