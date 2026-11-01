@@ -112,6 +112,7 @@ export default function Home() {
   const [showJobModal, setShowJobModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState("profil");
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [theme, setTheme] = useState("dark");
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedJobs, setSelectedJobs] = useState([]);
@@ -668,7 +669,7 @@ export default function Home() {
     } catch (err) { setError(err.message); }
   };
 
-  const openSettings = () => {
+  const openSettings = (tab = "profil") => {
     setSettingsForm({
       business_name: settings.business_name || "",
       business_address: settings.business_address || "",
@@ -681,7 +682,7 @@ export default function Home() {
     });
     setSettingsSaved("");
     loadServicePrices();
-    setSettingsTab("profil");
+    setSettingsTab(tab);
     setShowSettingsModal(true);
   };
 
@@ -1042,16 +1043,39 @@ export default function Home() {
           <AppLogo size={44} theme={theme} />
           <h1 className="font-semibold tracking-tight text-xl sm:text-2xl leading-tight">Pencatat Laporan</h1>
         </div>
-        <button onClick={openSettings} aria-label="Profil dan pengaturan"
-          className="w-11 h-11 rounded-full overflow-hidden shrink-0 border border-line bg-panel flex items-center justify-center">
-          {settings.business_logo ? (
-            <img src={settings.business_logo} alt="Logo perusahaan" className="w-full h-full object-cover" />
-          ) : (
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-zinc-400">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-            </svg>
+        <div className="relative flex items-center gap-2 shrink-0">
+          <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
+            aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
+            title={theme === "dark" ? "Mode terang" : "Mode gelap"}
+            className="w-11 h-11 rounded-full border border-line bg-panel flex items-center justify-center text-zinc-400 hover:text-persona shrink-0">
+            {theme === "dark"
+              ? icon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
+              : icon(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)}
+          </button>
+          <button onClick={() => setShowProfileMenu((v) => !v)} aria-label="Menu profil" aria-expanded={showProfileMenu}
+            className="w-11 h-11 rounded-full overflow-hidden shrink-0 border border-line bg-panel flex items-center justify-center">
+            {settings.business_logo ? (
+              <img src={settings.business_logo} alt="Logo perusahaan" className="w-full h-full object-cover" />
+            ) : (
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-zinc-400">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+              </svg>
+            )}
+          </button>
+          {showProfileMenu && (
+            <>
+              <button aria-label="Tutup menu profil" onClick={() => setShowProfileMenu(false)} className="fixed inset-0 z-40 cursor-default" />
+              <div className="absolute right-0 top-full mt-2 w-56 bg-panel border border-line rounded-2xl shadow-2xl p-2 z-50">
+                <p className="text-xs text-zinc-400 px-3 py-2">Login sebagai {username}</p>
+                <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("profil"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Profil</button>
+                <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("pengaturan"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Pengaturan</button>
+                <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("aplikasi"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Aplikasi</button>
+                <div className="border-t border-line my-1" />
+                <button type="button" onClick={handleLogout} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm text-red-500 hover:bg-zinc-800">Keluar</button>
+              </div>
+            </>
           )}
-        </button>
+        </div>
       </header>
 
       {error && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm mt-4">{error}</p>}
@@ -1558,32 +1582,12 @@ export default function Home() {
       {showSettingsModal && (
         <Modal title="Profil & Pengaturan" onClose={() => setShowSettingsModal(false)}>
           <div className="flex gap-1 border-b border-line overflow-x-auto">
-            {[["profil", "Profil"], ["pengaturan", "Pengaturan"], ["aplikasi", "Aplikasi"], ["akun", "Akun"]].map(([key, label]) => (
+            {[["profil", "Profil"], ["pengaturan", "Pengaturan"], ["aplikasi", "Aplikasi"]].map(([key, label]) => (
               <button key={key} type="button" onClick={() => setSettingsTab(key)}
                 className={`px-3 py-2 text-sm font-bold whitespace-nowrap border-b-2 -mb-px ${settingsTab === key ? "text-red-500 border-persona" : "text-zinc-400 border-transparent"}`}>{label}</button>
             ))}
           </div>
           <div className="space-y-5 pt-4">
-            {settingsTab === "pengaturan" && (<>
-            <div>
-              <h3 className="font-bold mb-2">Tampilan</h3>
-              <p className="text-sm text-zinc-400 mb-3">Pilih tema yang nyaman dipakai. Pilihanmu tersimpan di perangkat ini.</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button type="button" onClick={() => applyTheme("dark")}
-                  className={`rounded-2xl border p-4 text-left ${theme === "dark" ? "border-persona bg-red-500/10" : "border-line"}`}>
-                  <span className="block w-full h-10 rounded-lg bg-black border border-line mb-2" aria-hidden="true" />
-                  <strong className="text-sm">Gelap {theme === "dark" ? "✓" : ""}</strong>
-                  <span className="block text-xs text-zinc-400 mt-0.5">Hitam – merah</span>
-                </button>
-                <button type="button" onClick={() => applyTheme("light")}
-                  className={`rounded-2xl border p-4 text-left ${theme === "light" ? "border-persona bg-red-500/10" : "border-line"}`}>
-                  <span className="block w-full h-10 rounded-lg bg-white border border-line mb-2" aria-hidden="true" />
-                  <strong className="text-sm">Terang {theme === "light" ? "✓" : ""}</strong>
-                  <span className="block text-xs text-zinc-400 mt-0.5">Putih – merah</span>
-                </button>
-              </div>
-            </div>
-            </>)}
             {settingsTab === "profil" && (
             <form onSubmit={saveSettings} className="space-y-3">
               <h3 className="font-bold">Informasi Usaha</h3>
@@ -1703,13 +1707,6 @@ export default function Home() {
               ) : (
                 <p className="text-sm text-zinc-400">Bila tombol install belum muncul: di Chrome Android ketuk ⋮ lalu "Tambahkan ke Layar Utama" atau "Install aplikasi". Di iPhone: ketuk Bagikan lalu "Tambah ke Layar Utama".</p>
               )}
-            </div>
-            )}
-            {settingsTab === "akun" && (
-            <div>
-              <h3 className="font-bold mb-1">Akun</h3>
-              <p className="text-sm text-zinc-400 mb-3">Login sebagai {username}</p>
-              <button onClick={handleLogout} className="w-full bg-persona hover:bg-persona-dark px-5 py-3 rounded-xl font-bold">Keluar</button>
             </div>
             )}
           </div>
