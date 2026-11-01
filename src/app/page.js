@@ -480,13 +480,9 @@ export default function Home() {
     return d;
   };
 
-  const sendInvoiceWhatsApp = (job) => {
+  const sendInvoiceWhatsApp = async (job) => {
     const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
     const phone = toWaNumber(customer.phone || job.customer_phone);
-    if (!/^62\d{8,13}$/.test(phone)) {
-      setError("Nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan.");
-      return;
-    }
     const businessName = settings.business_name || "Pencatat Laporan";
     const invNo = `INV-${String(job.job_date).replaceAll("-", "")}-${String(job.id).padStart(4, "0")}`;
     const statusLabel = job.status === "lunas" ? "Lunas" : job.status === "dp" ? "DP" : "Belum bayar";
@@ -495,11 +491,33 @@ export default function Home() {
       : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: job.amount, amount: job.amount }];
     const lines = items.map((it) => `- ${it.service_type} (${fmtQty(it.qty)} ${it.unit}) @ ${fmtRp(it.unit_price)} = ${fmtRp(it.amount)}`).join("\n");
     const msg = `${businessName}\nINVOICE ${invNo}\nTanggal: ${job.job_date}\nPelanggan: ${job.customer_name}\n\n${lines}\n\nTotal: ${fmtRp(job.amount)}\nStatus: ${statusLabel}\n\nTerima kasih.`;
+    const filename = `invoice-${job.id}-${job.job_date}.pdf`;
+    // 1. Utamakan kirim file PDF langsung lewat lembar berbagi perangkat
+    // (Web Share API, didukung Chrome Android). Di lembar berbagi, pilih
+    // WhatsApp lalu pilih kontak pelanggan — nomor tidak terisi otomatis
+    // di sini, karena berbagi file tidak bisa menarget nomor seperti wa.me.
+    try {
+      const doc = await buildInvoiceDoc(job);
+      const file = new File([doc.output("blob")], filename, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Invoice ${invNo}`, text: `${businessName} — Invoice ${invNo}, total ${fmtRp(job.amount)} (${statusLabel}).` });
+        return;
+      }
+    } catch (err) {
+      if (err?.name === "AbortError") return; // pengguna membatalkan lembar berbagi
+      // Gagal lain (mis. PDF gagal dibuat akan dilempar lagi di bawah) —
+      // lanjut ke fallback wa.me bila memungkinkan.
+    }
+    // 2. Fallback: chat wa.me langsung ke nomor pelanggan, pesan teks invoice.
+    // wa.me memang tidak bisa melampirkan file, jadi ini hanya teks.
+    if (!/^62\d{8,13}$/.test(phone)) {
+      setError("Berbagi file PDF tidak didukung browser ini, dan nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan, atau unduh PDF-nya lalu kirim manual dari WhatsApp.");
+      return;
+    }
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
   };
 
-  const downloadInvoice = async (job) => {
-    try {
+  const buildInvoiceDoc = async (job) => {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF();
       const businessName = settings.business_name || "Pencatat Laporan";
@@ -568,6 +586,12 @@ export default function Home() {
       doc.splitTextToSize(note, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
       y += 6;
       doc.setFontSize(10); doc.text("Invoice ini dibuat dari aplikasi Pencatat Laporan.", 14, y);
+      return doc;
+  };
+
+  const downloadInvoice = async (job) => {
+    try {
+      const doc = await buildInvoiceDoc(job);
       doc.save(`invoice-${job.id}-${job.job_date}.pdf`);
     } catch (err) { setError(`Gagal membuat invoice: ${err.message}`); }
   };
@@ -1119,7 +1143,7 @@ export default function Home() {
             <button onClick={() => { const j = detailJob; setDetailJob(null); openJobModal(j); }} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold">Edit</button>
             <button onClick={() => setDetailJob(null)} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold">Tutup</button>
           </div>
-          <p className="text-xs text-zinc-400 mt-3">Kirim via WhatsApp membuka chat dengan nomor WA pelanggan dan pesan invoice sudah terisi. File PDF tidak ikut terlampir otomatis — unduh dulu, lalu lampirkan di chat WhatsApp bila perlu.</p>
+          <p className="text-xs text-zinc-400 mt-3">Kirim via WhatsApp membagikan file PDF invoice langsung (di HP Android, pilih WhatsApp di lembar berbagi lalu pilih kontak pelanggan). Bila browser tidak mendukung berbagi file, tombol ini membuka chat wa.me ke nomor WA pelanggan dengan pesan teks invoice — wa.me tidak bisa melampirkan file, jadi dalam kasus itu unduh dulu PDF-nya lalu lampirkan manual.</p>
           <p className="text-xs text-zinc-400 mt-3">Header invoice memakai informasi usaha dari Pengaturan (ikon roda gigi di atas). Isi dulu di sana bila nama/alamat/telepon/website usaha belum tampil di invoice.</p>
         </Modal>
       )}
