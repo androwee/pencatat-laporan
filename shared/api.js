@@ -264,11 +264,17 @@ export async function handleApi(request, env) {
       }
       const body = await readJson(request);
       if (!body) return json({ error: "Body JSON tidak valid." }, 400);
-      const allowed = ["business_name", "business_address", "business_phone", "business_website"];
+      const allowed = ["business_name", "business_address", "business_phone", "business_website", "business_logo"];
       for (const key of allowed) {
         if (key in body) {
           const value = String(body[key] || "").trim();
-          if (value.length > 200) return json({ error: `Isi ${key} maksimal 200 karakter.` }, 400);
+          if (key === "business_logo") {
+            // Logo disimpan sebagai data URL (PNG/JPEG, sudah diperkecil di aplikasi).
+            if (value && !/^data:image\/(png|jpeg);base64,/.test(value)) return json({ error: "Logo harus berupa gambar PNG atau JPEG." }, 400);
+            if (value.length > 1500000) return json({ error: "Logo terlalu besar (maksimal sekitar 1 MB setelah diperkecil)." }, 400);
+          } else if (value.length > 200) {
+            return json({ error: `Isi ${key} maksimal 200 karakter.` }, 400);
+          }
           await qRun(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value);
         }
       }

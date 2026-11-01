@@ -16,6 +16,7 @@ Webapp pribadi untuk mencatat pelanggan jasa dan laporan pemasukan harian sampai
 - Invoice PDF: buka detail transaksi di tab Transaksi, lalu unduh invoice PDF (header memakai informasi usaha dari Pengaturan)
 - Multi-layanan per transaksi: satu transaksi bisa berisi beberapa baris layanan (cth: Sedot WC + Perbaikan Wastafel + Lain-lain) dalam satu invoice; tiap baris punya jumlah, satuan (kubik/strip/pcs/paket), harga satuan, dan subtotal — total transaksi adalah jumlah subtotalnya. Laporan per jenis jasa juga dihitung per baris layanan, bukan per transaksi.
 - Pengaturan: tema gelap/terang dan informasi usaha (nama, alamat, telepon, website) yang dipakai di invoice
+- Logo perusahaan: upload di Pengaturan (otomatis diperkecil maks. 512px, disimpan di D1), tampil di kop invoice di kiri nama usaha
 - Ekspor laporan ke CSV
 
 ## Login: hanya dari Cloudflare env

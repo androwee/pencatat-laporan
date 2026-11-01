@@ -117,7 +117,7 @@ export default function Home() {
   const [selectedJobs, setSelectedJobs] = useState([]);
   const [detailJob, setDetailJob] = useState(null);
   const [settings, setSettings] = useState({});
-  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "" });
+  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "" });
   const [settingsSaved, setSettingsSaved] = useState("");
   const [jobFilterType, setJobFilterType] = useState("all");
   const [jobFilterWeek, setJobFilterWeek] = useState(isoWeek(todayWib()));
@@ -196,6 +196,7 @@ export default function Home() {
         business_address: data.settings?.business_address || "",
         business_phone: data.settings?.business_phone || "",
         business_website: data.settings?.business_website || "",
+        business_logo: data.settings?.business_logo || "",
       });
     } catch (e) { /* settings opsional, abaikan */ }
   }, []);
@@ -398,9 +399,47 @@ export default function Home() {
       business_address: settings.business_address || "",
       business_phone: settings.business_phone || "",
       business_website: settings.business_website || "",
+      business_logo: settings.business_logo || "",
     });
     setSettingsSaved("");
     setShowSettingsModal(true);
+  };
+
+  // Logo: diperkecil di perangkat (maks. 512px) sebelum disimpan, supaya
+  // tidak membebani database; PNG dipertahankan, JPEG dipakai bila lebih kecil.
+  const handleLogoFile = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setError("File logo harus berupa gambar."); return; }
+    if (file.size > 5 * 1024 * 1024) { setError("Ukuran file logo maksimal 5 MB."); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxDim = 512;
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        let dataUrl = canvas.toDataURL("image/png");
+        if (dataUrl.length > 200 * 1024) {
+          const c2 = document.createElement("canvas");
+          c2.width = w; c2.height = h;
+          const ctx2 = c2.getContext("2d");
+          ctx2.fillStyle = "#ffffff"; ctx2.fillRect(0, 0, w, h);
+          ctx2.drawImage(img, 0, 0, w, h);
+          const jpeg = c2.toDataURL("image/jpeg", 0.85);
+          if (jpeg.length < dataUrl.length) dataUrl = jpeg;
+        }
+        setSettingsForm((prev) => ({ ...prev, business_logo: dataUrl }));
+        setSettingsSaved("");
+      } catch { setError("Logo tidak bisa diproses."); }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setError("Gambar logo tidak bisa dibaca."); URL.revokeObjectURL(url); };
+    img.src = url;
   };
 
   const saveSettings = async (e) => {
@@ -421,12 +460,26 @@ export default function Home() {
       const statusLabel = job.status === "lunas" ? "Lunas" : job.status === "dp" ? "DP" : "Belum bayar";
       const invNo = `INV-${String(job.job_date).replaceAll("-", "")}-${String(job.id).padStart(4, "0")}`;
       let y = 18;
+      let textX = 14;
+      let logoBottom = 0;
+      if (settings.business_logo) {
+        try {
+          const props = doc.getImageProperties(settings.business_logo);
+          const format = settings.business_logo.includes("image/jpeg") ? "JPEG" : "PNG";
+          const aspect = props.width / props.height;
+          const logoW = aspect >= 1 ? 28 : Math.min(28, 20 * aspect);
+          const logoH = aspect >= 1 ? 28 / aspect : 20;
+          doc.addImage(settings.business_logo, format, 14, 12, logoW, logoH);
+          textX = 14 + logoW + 4;
+          logoBottom = 12 + logoH;
+        } catch { /* logo rusak: lanjut tanpa logo, jangan gagalkan invoice */ }
+      }
       doc.setFontSize(18); doc.setFont("helvetica", "bold");
-      doc.text(businessName, 14, y); y += 8;
+      doc.splitTextToSize(businessName, 196 - textX).forEach((l) => { doc.text(l, textX, y); y += 8; });
       doc.setFontSize(11); doc.setFont("helvetica", "normal");
       const businessLines = [settings.business_address, settings.business_phone, settings.business_website].filter(Boolean);
-      businessLines.forEach((line) => { doc.text(String(line), 14, y); y += 6; });
-      y += 4;
+      businessLines.forEach((line) => { doc.splitTextToSize(String(line), 196 - textX).forEach((l) => { doc.text(l, textX, y); y += 6; }); });
+      y = Math.max(y, logoBottom) + 4;
       doc.setDrawColor(230, 0, 18); doc.setLineWidth(0.8); doc.line(14, y, 196, y); y += 10;
       doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.text("INVOICE", 14, y); y += 8;
       doc.setFontSize(11); doc.setFont("helvetica", "normal");
@@ -944,6 +997,22 @@ export default function Home() {
               <label className="block text-sm font-medium">Website
                 <input className="mt-1" inputMode="url" value={settingsForm.business_website} onChange={(e) => setSettingsForm({ ...settingsForm, business_website: e.target.value })} placeholder="https://…" />
               </label>
+              <div>
+                <p className="text-sm font-medium mb-2">Logo perusahaan <span className="text-zinc-400 font-normal">— tampil di kop invoice</span></p>
+                {settingsForm.business_logo && (
+                  <img src={settingsForm.business_logo} alt="Pratinjau logo perusahaan" className="max-h-20 max-w-full object-contain bg-white rounded-lg p-2 mb-2 border border-line" />
+                )}
+                <div className="flex gap-2 flex-wrap items-center">
+                  <label className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm cursor-pointer">
+                    {settingsForm.business_logo ? "Ganti logo" : "Pilih logo"}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { handleLogoFile(e.target.files?.[0]); e.target.value = ""; }} />
+                  </label>
+                  {settingsForm.business_logo && (
+                    <button type="button" onClick={() => setSettingsForm({ ...settingsForm, business_logo: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Hapus logo</button>
+                  )}
+                </div>
+                <p className="text-xs text-zinc-400 mt-1">Gambar otomatis diperkecil (maks. 512px). Setelah pilih/ganti logo, ketuk "Simpan informasi usaha" di bawah.</p>
+              </div>
               <div className="flex items-center gap-3">
                 <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Simpan informasi usaha</button>
                 {settingsSaved && <span className="text-sm text-emerald-400">{settingsSaved}</span>}
