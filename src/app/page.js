@@ -926,7 +926,8 @@ export default function Home() {
     const today = todayWib();
     const weekEnd = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86400000).toISOString().slice(0, 10);
     const groups = { overdue: [], today: [], week: [], later: [] };
-    (dash.schedules || []).forEach((c) => {
+    // dash masih null sebelum login — jangan sentuh propertinya.
+    (dash?.schedules || []).forEach((c) => {
       const d = c.next_visit_date;
       if (d < today) groups.overdue.push(c);
       else if (d === today) groups.today.push(c);
@@ -1068,7 +1069,7 @@ export default function Home() {
               <button onClick={openPiutang} className="bg-persona px-4 py-2 rounded-xl font-bold text-sm">Lihat piutang</button>
             </div>
           )}
-          {(dash.schedules || []).length > 0 && (
+          {(dash?.schedules || []).length > 0 && (
             <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
               <h3 className="font-bold">Jadwal kunjungan berikutnya</h3>
               {scheduleGroups.map((g) => (
