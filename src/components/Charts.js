@@ -22,8 +22,8 @@ export function BarChart({ labels, values }) {
         return (
           <g key={i}>
             <rect x={x} y={y} width={bw} height={bh} fill="#e60012" />
-            {bw >= 28 && <text x={x + bw / 2} y={y - 6} textAnchor="middle" fontSize="11" fill="#fafafa">{fmtRp(v)}</text>}
-            <text x={x + bw / 2} y={H - 8} textAnchor="middle" fontSize="11" fill="#a1a1aa">{labels[i].slice(5)}</text>
+            {bw >= 28 && <text x={x + bw / 2} y={y - 6} textAnchor="middle" fontSize="11" fontWeight="700" fill="#e60012">{fmtRp(v)}</text>}
+            <text x={x + bw / 2} y={H - 8} textAnchor="middle" fontSize="11" fill="#667085">{labels[i].slice(5)}</text>
           </g>
         );
       })}
@@ -38,21 +38,23 @@ export function DonutChart({ parts }) {
   let offset = 0;
   return (
     <div className="flex flex-col items-center gap-4">
-      <svg viewBox="0 0 200 200" className="w-48 h-48 -rotate-90" role="img" aria-label="Grafik donat status pembayaran">
-        <circle cx="100" cy="100" r={R} fill="none" stroke="#2a2a2a" strokeWidth="26" />
-        {parts.map((p) => {
-          const len = (p.value / total) * C;
-          const el = (
-            <circle key={p.label} cx="100" cy="100" r={R} fill="none" stroke={p.color} strokeWidth="26"
-              strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset} />
-          );
-          offset += len;
-          return el;
-        })}
-      </svg>
-      <div className="-mt-32 mb-8 text-center pointer-events-none">
-        <div className="font-black text-lg leading-tight">{fmtRp(total)}</div>
-        <div className="text-xs text-zinc-400">Total periode</div>
+      <div className="relative w-48 h-48">
+        <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90" role="img" aria-label="Grafik donat status pembayaran">
+          <circle cx="100" cy="100" r={R} fill="none" stroke="#2a2a2a" strokeWidth="26" />
+          {parts.map((p) => {
+            const len = (p.value / total) * C;
+            const el = (
+              <circle key={p.label} cx="100" cy="100" r={R} fill="none" stroke={p.color} strokeWidth="26"
+                strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset} />
+            );
+            offset += len;
+            return el;
+          })}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-6">
+          <div className="font-black text-lg leading-tight break-words">{fmtRp(total)}</div>
+          <div className="text-xs text-zinc-400">Total periode</div>
+        </div>
       </div>
       <div className="flex flex-wrap gap-3 justify-center text-sm">
         {parts.map((p) => (

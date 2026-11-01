@@ -107,6 +107,8 @@ export default function Home() {
   const [newCustomer, setNewCustomer] = useState({ name: "", address: "", phone: "" });
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showJobModal, setShowJobModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [theme, setTheme] = useState("dark");
   const [jobFilterType, setJobFilterType] = useState("all");
   const [jobFilterWeek, setJobFilterWeek] = useState(isoWeek(todayWib()));
   const [jobFilterMonth, setJobFilterMonth] = useState(todayWib().slice(0, 7));
@@ -209,6 +211,22 @@ export default function Home() {
   }, [loadDashboard, loadCustomers]);
 
   useEffect(() => { if (tab === "customers") loadCustomers(search); }, [search, tab, loadCustomers]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("pencatat-theme");
+      if (saved === "light" || saved === "dark") {
+        setTheme(saved);
+        document.documentElement.classList.toggle("theme-light", saved === "light");
+      }
+    } catch {}
+  }, []);
+
+  const applyTheme = (next) => {
+    setTheme(next);
+    try { localStorage.setItem("pencatat-theme", next); } catch {}
+    document.documentElement.classList.toggle("theme-light", next === "light");
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -340,7 +358,7 @@ export default function Home() {
 
   const dockBtn = (name, label, icon) => (
     <button key={name} onClick={() => showTab(name)} aria-label={label}
-      className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-full text-[11px] font-bold ${tab === name ? "text-persona-bright bg-red-500/10" : "text-zinc-400 hover:text-white"}`}>
+      className={`flex-1 flex flex-col items-center gap-0.5 px-1 py-2 rounded-full text-[11px] font-bold transition-colors ${tab === name ? "bg-persona text-white shadow" : "text-zinc-400 hover:text-white"}`}>
       {icon}<span>{label}</span>
     </button>
   );
@@ -361,7 +379,13 @@ export default function Home() {
             <p className="text-zinc-400 text-sm mt-1">Login sebagai {username}</p>
           </div>
         </div>
-        <button onClick={handleLogout} className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl font-bold text-sm">Keluar</button>
+        <button onClick={() => setShowSettingsModal(true)} aria-label="Pengaturan"
+          className="bg-zinc-800 hover:bg-zinc-700 w-11 h-11 rounded-full flex items-center justify-center shrink-0">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
       </header>
 
       {error && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm mt-4">{error}</p>}
@@ -663,7 +687,37 @@ export default function Home() {
         </Modal>
       )}
 
-      <nav className="fixed left-1/2 -translate-x-1/2 bottom-4 z-50 flex items-end gap-1 bg-panel border border-line rounded-full px-2 py-2 shadow-2xl shadow-black/60 max-w-[calc(100vw-24px)]" aria-label="Navigasi utama">
+      {showSettingsModal && (
+        <Modal title="Pengaturan" onClose={() => setShowSettingsModal(false)}>
+          <div className="space-y-5">
+            <div>
+              <h3 className="font-bold mb-2">Tampilan</h3>
+              <p className="text-sm text-zinc-400 mb-3">Pilih tema yang nyaman dipakai. Pilihanmu tersimpan di perangkat ini.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => applyTheme("dark")}
+                  className={`rounded-2xl border p-4 text-left ${theme === "dark" ? "border-persona bg-red-500/10" : "border-line"}`}>
+                  <span className="block w-full h-10 rounded-lg bg-black border border-line mb-2" aria-hidden="true" />
+                  <strong className="text-sm">Gelap {theme === "dark" ? "✓" : ""}</strong>
+                  <span className="block text-xs text-zinc-400 mt-0.5">Hitam – merah</span>
+                </button>
+                <button type="button" onClick={() => applyTheme("light")}
+                  className={`rounded-2xl border p-4 text-left ${theme === "light" ? "border-persona bg-red-500/10" : "border-line"}`}>
+                  <span className="block w-full h-10 rounded-lg bg-white border border-line mb-2" aria-hidden="true" />
+                  <strong className="text-sm">Terang {theme === "light" ? "✓" : ""}</strong>
+                  <span className="block text-xs text-zinc-400 mt-0.5">Putih – merah</span>
+                </button>
+              </div>
+            </div>
+            <div className="border-t border-line pt-4">
+              <h3 className="font-bold mb-1">Akun</h3>
+              <p className="text-sm text-zinc-400 mb-3">Login sebagai {username}</p>
+              <button onClick={handleLogout} className="w-full bg-persona hover:bg-persona-dark px-5 py-3 rounded-xl font-bold">Keluar</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      <nav className="fixed left-1/2 -translate-x-1/2 bottom-4 z-50 flex items-end gap-1 bg-panel border border-line rounded-full px-1.5 py-1.5 shadow-2xl shadow-black/60 w-[calc(100vw-24px)] max-w-md" aria-label="Navigasi utama">
         {dockBtn("dashboard", "Dashboard", icon(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>))}
         {dockBtn("customers", "Pelanggan", icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>))}
         <button onClick={handleAddNew} aria-label="Tambah catatan baru"
