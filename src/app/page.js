@@ -115,6 +115,8 @@ export default function Home() {
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedJobs, setSelectedJobs] = useState([]);
   const [detailJob, setDetailJob] = useState(null);
+  const [historyCustomer, setHistoryCustomer] = useState(null);
+  const [historyJobs, setHistoryJobs] = useState(null);
   const [settings, setSettings] = useState({});
   const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "" });
   const [servicePrices, setServicePrices] = useState([]);
@@ -356,6 +358,13 @@ export default function Home() {
       : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: String(job.amount) }]);
     loadCustomers();
     setShowJobModal(true);
+  };
+
+  const openHistory = async (customer) => {
+    setHistoryCustomer(customer);
+    setHistoryJobs(null);
+    try { const data = await api(`/api/jobs?customer_id=${customer.id}`); setHistoryJobs(data.jobs || []); }
+    catch (err) { setError(err.message); setHistoryJobs([]); }
   };
 
   const openCustomerModal = (customer) => {
@@ -999,6 +1008,7 @@ export default function Home() {
                   <div className="text-zinc-400 text-sm mt-1">{c.address || "—"}</div>
                   <div className="text-sm mt-1">{c.phone || "—"}</div>
                   <div className="flex gap-2 mt-3">
+                    <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Riwayat</button>
                     <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
                     <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </div>
@@ -1013,6 +1023,7 @@ export default function Home() {
                   className={`border-t border-line select-none ${selectedCustomers.includes(c.id) ? "bg-red-500/10" : ""}`}>
                   <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td>
                   <td className="p-3 whitespace-nowrap">
+                    <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Riwayat</button>
                     <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
                     <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </td>
@@ -1490,6 +1501,43 @@ export default function Home() {
               <p className="text-sm text-zinc-400 mb-3">Login sebagai {username}</p>
               <button onClick={handleLogout} className="w-full bg-persona hover:bg-persona-dark px-5 py-3 rounded-xl font-bold">Keluar</button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {historyCustomer && (
+        <Modal title="Riwayat pelanggan" onClose={() => setHistoryCustomer(null)}>
+          <div className="space-y-3 text-sm">
+            <div>
+              <strong>{historyCustomer.name}</strong>
+              {historyCustomer.address && <div className="text-zinc-400">{historyCustomer.address}</div>}
+              {historyCustomer.phone && <div className="text-zinc-400">{historyCustomer.phone}</div>}
+            </div>
+            {historyJobs === null ? (
+              <p className="text-zinc-400">Memuat…</p>
+            ) : (
+              <>
+                <div className="bg-panel border border-line rounded-xl p-3 space-y-1">
+                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Total transaksi</span><strong>{historyJobs.length} transaksi · {fmtRp(historyJobs.reduce((s, j) => s + Number(j.amount), 0))}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Sudah dibayar</span><strong>{fmtRp(historyJobs.reduce((s, j) => s + paidOf(j), 0))}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Sisa tagihan</span><strong className={historyJobs.reduce((s, j) => s + remainingOf(j), 0) > 0 ? "text-red-400" : ""}>{fmtRp(historyJobs.reduce((s, j) => s + remainingOf(j), 0))}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Terakhir pakai jasa</span><strong>{historyJobs.length ? [...historyJobs.map((j) => j.job_date)].sort().reverse()[0] : "—"}</strong></div>
+                </div>
+                <div className="space-y-2">
+                  {historyJobs.map((j) => (
+                    <div key={j.id} className="border border-line rounded-xl p-3">
+                      <div className="flex justify-between gap-2"><strong>{j.service_type}</strong>{statusPill(j.status)}</div>
+                      <div className="text-zinc-400 mt-1">{j.job_date} · Total {fmtRp(j.amount)}{paidOf(j) > 0 ? ` · Dibayar ${fmtRp(paidOf(j))}` : ""}{remainingOf(j) > 0 ? ` · Sisa ${fmtRp(remainingOf(j))}` : ""}</div>
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                        <button onClick={() => { const job = j; setHistoryCustomer(null); setDetailJob(job); }} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Detail</button>
+                        <button onClick={() => { const job = j; setHistoryCustomer(null); duplicateJob(job); }} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Ulangi</button>
+                      </div>
+                    </div>
+                  ))}
+                  {!historyJobs.length && <p className="text-zinc-400">Belum ada transaksi untuk pelanggan ini.</p>}
+                </div>
+              </>
+            )}
           </div>
         </Modal>
       )}
