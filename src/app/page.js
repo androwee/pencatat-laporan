@@ -695,7 +695,7 @@ export default function Home() {
     } catch (err) { setError(`Gagal membuat invoice: ${err.message}`); }
   };
 
-  const markJobPaid = async (job) => {
+  const markJobPaid = async (job, after) => {
     const remaining = remainingOf(job);
     if (!remaining) return;
     if (!confirm(`Tandai transaksi ini sebagai lunas? Sisa ${fmtRp(remaining)} akan dicatat sebagai sudah dibayar.`)) return;
@@ -709,10 +709,52 @@ export default function Home() {
           job_date: job.job_date, status: "lunas", note: job.note || "", paid_amount: job.amount,
         }),
       });
-      setDetailJob(updated.job);
-      loadJobs();
-      if (tab === "dashboard") loadDashboard();
+      if (after) after(updated.job);
+      else {
+        setDetailJob(updated.job);
+        loadJobs();
+        if (tab === "dashboard") loadDashboard();
+      }
     } catch (err) { setError(err.message); }
+  };
+
+  // Piutang: transaksi dengan sisa > 0, dikelompokkan per pelanggan
+  // (satu pengingat per pelanggan, bukan satu per transaksi, supaya
+  // pelanggan dengan beberapa tagihan tidak menerima banyak pesan).
+  // Diurutkan dari total sisa terbesar, transaksi tertua dulu.
+  const openPiutang = () => {
+    loadJobs({ from: "", to: "", status: "" });
+    loadCustomers();
+    setTab("piutang");
+  };
+  const piutangGroups = (() => {
+    const byCustomer = {};
+    jobs.filter((j) => remainingOf(j) > 0).forEach((j) => {
+      const key = j.customer_id;
+      if (!byCustomer[key]) byCustomer[key] = { customer_id: key, customer_name: j.customer_name, phone: j.customer_phone || "", jobs: [], totalRemaining: 0 };
+      byCustomer[key].jobs.push(j);
+      byCustomer[key].totalRemaining += remainingOf(j);
+    });
+    return Object.values(byCustomer)
+      .map((g) => ({ ...g, jobs: [...g.jobs].sort((a, b) => (a.job_date < b.job_date ? -1 : 1)) }))
+      .sort((a, b) => b.totalRemaining - a.totalRemaining);
+  })();
+  // Pengingat dibuka sebagai chat wa.me dengan pesan sudah jadi — yang
+  // menekan Kirim tetap kamu di WhatsApp, tidak terkirim otomatis.
+  const sendPiutangReminder = (group) => {
+    const customer = customers.find((c) => c.id === Number(group.customer_id)) || {};
+    const phone = toWaNumber(customer.phone || group.phone);
+    if (!/^62\d{8,13}$/.test(phone)) {
+      setError("Nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan.");
+      return;
+    }
+    const businessName = settings.business_name || "Pencatat Laporan";
+    const lines = group.jobs.map((j) => `- ${j.job_date} ${j.service_type} — Total ${fmtRp(j.amount)}, sudah dibayar ${fmtRp(paidOf(j))}, sisa ${fmtRp(remainingOf(j))}`).join("\n");
+    const bankLine = settings.bank_name && settings.bank_account_number
+      ? `\nPembayaran: ${settings.bank_name} ${settings.bank_account_number}${settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}`
+      : "";
+    const msg = `Halo ${group.customer_name}, ini pengingat tagihan dari ${businessName}.\n\nTagihan yang belum lunas:\n${lines}\n\nTotal sisa tagihan: ${fmtRp(group.totalRemaining)}${bankLine}\n\nTerima kasih.`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
   };
 
   if (view === "loading") return <main className="max-w-3xl mx-auto p-6 text-zinc-400">Memuat…</main>;
@@ -822,6 +864,7 @@ export default function Home() {
             <div className="bg-red-500/10 border border-persona/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
               <span className="font-bold">Total piutang: {fmtRp(dash.outstanding)}</span>
               <span className="text-sm text-zinc-400">{dash.outstandingCount} transaksi belum lunas</span>
+              <button onClick={openPiutang} className="bg-persona px-4 py-2 rounded-xl font-bold text-sm">Lihat piutang</button>
             </div>
           )}
           <div className="grid md:grid-cols-2 gap-4">
@@ -1031,6 +1074,52 @@ export default function Home() {
                 {!jobs.length && <tr><td colSpan="6" className="p-4 text-zinc-400">Belum ada transaksi.</td></tr>}
               </tbody></table>
           </div></div>
+        </div>
+      )}
+
+      {tab === "piutang" && (
+        <div className="mt-5 space-y-5">
+          <div className="flex justify-between items-center gap-3">
+            <h2 className="font-bold text-lg">Piutang</h2>
+            <button onClick={() => showTab("dashboard")} className="bg-zinc-800 px-4 py-2.5 rounded-full font-bold text-sm shrink-0">← Kembali</button>
+          </div>
+          {!(settings.bank_name && settings.bank_account_number) && (
+            <p className="text-xs text-zinc-400">Isi rekening di Profil & Pengaturan agar pengingat WhatsApp menyertakan info pembayaran.</p>
+          )}
+          <div className="bg-panel border border-line rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
+            <span className="font-bold">Total piutang: {fmtRp(piutangGroups.reduce((s, g) => s + g.totalRemaining, 0))}</span>
+            <span className="text-sm text-zinc-400">{piutangGroups.reduce((s, g) => s + g.jobs.length, 0)} transaksi · {piutangGroups.length} pelanggan</span>
+          </div>
+          {!piutangGroups.length && <p className="text-zinc-400 text-sm">Tidak ada piutang. Semua transaksi sudah lunas.</p>}
+          {piutangGroups.map((g) => (
+            <div key={g.customer_id} className="bg-panel border border-line rounded-2xl p-4 space-y-3">
+              <div className="flex justify-between gap-2">
+                <div>
+                  <strong>{g.customer_name}</strong>
+                  {g.phone && <div className="text-zinc-400 text-sm">{g.phone}</div>}
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-zinc-400 text-xs">Total sisa</div>
+                  <strong className="text-red-400">{fmtRp(g.totalRemaining)}</strong>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {g.jobs.map((j) => (
+                  <div key={j.id} className="flex justify-between gap-2 text-sm border border-line rounded-xl p-3">
+                    <div>
+                      <div><strong>{j.service_type}</strong><span className="text-zinc-400"> · {j.job_date}</span></div>
+                      <div className="text-zinc-400">Total {fmtRp(j.amount)} · Sudah dibayar {fmtRp(paidOf(j))}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-bold text-red-400">Sisa {fmtRp(remainingOf(j))}</div>
+                      <button onClick={() => markJobPaid(j, () => { loadJobs({ from: "", to: "", status: "" }); loadDashboard(); })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mt-1">Tandai lunas</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => sendPiutangReminder(g)} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-white text-sm">Ingatkan via WhatsApp</button>
+            </div>
+          ))}
         </div>
       )}
 
