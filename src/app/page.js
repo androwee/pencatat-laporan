@@ -60,6 +60,8 @@ export default function Home() {
   const [customerForm, setCustomerForm] = useState(emptyCustomer);
   const [jobs, setJobs] = useState([]);
   const [jobForm, setJobForm] = useState(emptyJob);
+  const [jobCustomerMode, setJobCustomerMode] = useState("existing");
+  const [newCustomer, setNewCustomer] = useState({ name: "", address: "", phone: "" });
   const [report, setReport] = useState(null);
   const [reportPeriod, setReportPeriod] = useState("monthly");
   const [reportDate, setReportDate] = useState(todayWib());
@@ -161,6 +163,8 @@ export default function Home() {
 
   const handleAddNew = () => {
     setJobForm({ ...emptyJob, job_date: todayWib() });
+    setJobCustomerMode("existing");
+    setNewCustomer({ name: "", address: "", phone: "" });
     setTab("jobs");
     loadCustomers(); loadJobs();
     setTimeout(() => {
@@ -186,14 +190,27 @@ export default function Home() {
     e.preventDefault();
     try {
       const id = jobForm.id;
+      let customerId = Number(jobForm.customer_id);
+      // Mode pelanggan baru: simpan dulu ke list pelanggan, lalu pakai id-nya untuk transaksi.
+      if (!id && jobCustomerMode === "new") {
+        if (!newCustomer.name.trim()) throw new Error("Nama pelanggan baru wajib diisi.");
+        const created = await api("/api/customers", {
+          method: "POST",
+          body: JSON.stringify({ name: newCustomer.name, address: newCustomer.address, phone: newCustomer.phone }),
+        });
+        customerId = created.customer.id;
+      }
       await api(id ? `/api/jobs/${id}` : "/api/jobs", {
         method: id ? "PUT" : "POST",
         body: JSON.stringify({
-          customer_id: Number(jobForm.customer_id), service_type: jobForm.service_type,
+          customer_id: customerId, service_type: jobForm.service_type,
           amount: Number(jobForm.amount), job_date: jobForm.job_date, status: jobForm.status, note: jobForm.note,
         }),
       });
       setJobForm({ ...emptyJob, job_date: todayWib() });
+      setJobCustomerMode("existing");
+      setNewCustomer({ name: "", address: "", phone: "" });
+      loadCustomers();
       loadJobs();
     } catch (err) { setError(err.message); }
   };
@@ -258,7 +275,7 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <LogoMark size={40} />
           <div>
-            <h1 className="p5-title text-2xl leading-none">Pencatat Laporan</h1>
+            <h1 className="p5-title text-xl sm:text-2xl leading-none">Pencatat Laporan</h1>
             <p className="text-zinc-400 text-sm mt-1">Login sebagai {username}</p>
           </div>
         </div>
@@ -281,7 +298,17 @@ export default function Home() {
           </div>
           <section className="bg-panel border border-line rounded-2xl overflow-hidden">
             <h2 className="font-bold p-4 pb-0">Transaksi terbaru</h2>
-            <div className="overflow-x-auto p-4 pt-2">
+            <div className="sm:hidden p-4 pt-2 space-y-3">
+              {dash.recent.map((j) => (
+                <div key={j.id} className="border border-line rounded-xl p-3">
+                  <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
+                  <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
+                  <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
+                </div>
+              ))}
+              {!dash.recent.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
+            </div>
+            <div className="hidden sm:block overflow-x-auto p-4 pt-2">
               <table className="w-full text-sm min-w-[560px]">
                 <thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">Tanggal</th><th className="py-2 pr-3">Pelanggan</th><th className="py-2 pr-3">Jasa</th><th className="py-2 pr-3">Nominal</th><th className="py-2">Status</th></tr></thead>
                 <tbody>
@@ -314,7 +341,22 @@ export default function Home() {
           <label className="block text-sm font-medium">Cari pelanggan
             <input className="mt-1" placeholder="Nama atau nomor WA…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </label>
-          <div className="bg-panel border border-line rounded-2xl overflow-hidden"><div className="overflow-x-auto">
+          <div className="bg-panel border border-line rounded-2xl overflow-hidden">
+            <div className="sm:hidden p-4 space-y-3">
+              {customers.map((c) => (
+                <div key={c.id} className="border border-line rounded-xl p-3">
+                  <strong>{c.name}</strong>
+                  <div className="text-zinc-400 text-sm mt-1">{c.address || "—"}</div>
+                  <div className="text-sm mt-1">{c.phone || "—"}</div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => setCustomerForm({ id: c.id, name: c.name, address: c.address, phone: c.phone })} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
+                    <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
+                  </div>
+                </div>
+              ))}
+              {!customers.length && <p className="text-zinc-400 text-sm">Belum ada pelanggan.</p>}
+            </div>
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3"></th></tr></thead>
               <tbody>{customers.map((c) => (
                 <tr key={c.id} className="border-t border-line">
@@ -334,13 +376,35 @@ export default function Home() {
         <div className="mt-5 space-y-5">
           <form id="job-form" onSubmit={submitJob} className="bg-panel border border-line rounded-2xl p-4 space-y-3">
             <h2 className="font-bold">Tambah / edit transaksi</h2>
+            {!jobForm.id && (
+              <div className="flex gap-2" role="group" aria-label="Pilih pelanggan">
+                <button type="button" onClick={() => setJobCustomerMode("existing")}
+                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "existing" ? "bg-persona text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan lama</button>
+                <button type="button" onClick={() => setJobCustomerMode("new")}
+                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "new" ? "bg-persona text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan baru</button>
+              </div>
+            )}
             <div className="grid sm:grid-cols-2 gap-3">
-              <label className="block text-sm font-medium">Pelanggan *
-                <select id="job-customer-select" className="mt-1" required value={jobForm.customer_id} onChange={(e) => setJobForm({ ...jobForm, customer_id: e.target.value })}>
-                  <option value="">-- pilih pelanggan --</option>
-                  {customers.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
-                </select>
-              </label>
+              {jobCustomerMode === "new" && !jobForm.id ? (
+                <>
+                  <label className="block text-sm font-medium sm:col-span-2">Nama pelanggan baru *
+                    <input className="mt-1" required value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })} placeholder="Nama pelanggan baru, otomatis tersimpan ke list pelanggan" />
+                  </label>
+                  <label className="block text-sm font-medium">Alamat pelanggan baru
+                    <input className="mt-1" value={newCustomer.address} onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })} />
+                  </label>
+                  <label className="block text-sm font-medium">Nomor telepon / WA pelanggan baru
+                    <input className="mt-1" inputMode="tel" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} />
+                  </label>
+                </>
+              ) : (
+                <label className="block text-sm font-medium">Pelanggan *
+                  <select id="job-customer-select" className="mt-1" required value={jobForm.customer_id} onChange={(e) => setJobForm({ ...jobForm, customer_id: e.target.value })}>
+                    <option value="">-- pilih pelanggan --</option>
+                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
+                  </select>
+                </label>
+              )}
               <label className="block text-sm font-medium">Jenis jasa *<input className="mt-1" required placeholder="cth: Sedot WC, Service AC…" value={jobForm.service_type} onChange={(e) => setJobForm({ ...jobForm, service_type: e.target.value })} /></label>
               <label className="block text-sm font-medium">Nominal (Rp) *<input className="mt-1" type="number" min="0" step="1" required value={jobForm.amount} onChange={(e) => setJobForm({ ...jobForm, amount: e.target.value })} /></label>
               <label className="block text-sm font-medium">Tanggal *<input className="mt-1" type="date" required value={jobForm.job_date} onChange={(e) => setJobForm({ ...jobForm, job_date: e.target.value })} /></label>
@@ -353,17 +417,33 @@ export default function Home() {
             </div>
             <div className="flex gap-2 flex-wrap">
               <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Simpan transaksi</button>
-              <button type="button" onClick={() => setJobForm({ ...emptyJob, job_date: todayWib() })} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
+              <button type="button" onClick={() => { setJobForm({ ...emptyJob, job_date: todayWib() }); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
             </div>
           </form>
-          <div className="bg-panel border border-line rounded-2xl overflow-hidden"><div className="overflow-x-auto">
+          <div className="bg-panel border border-line rounded-2xl overflow-hidden">
+            <div className="sm:hidden p-4 space-y-3">
+              {jobs.map((j) => (
+                <div key={j.id} className="border border-line rounded-xl p-3">
+                  <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
+                  <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
+                  <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
+                  {j.note && <div className="text-zinc-400 text-sm mt-1">{j.note}</div>}
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => { setJobCustomerMode("existing"); setJobForm({ id: j.id, customer_id: String(j.customer_id), service_type: j.service_type, amount: String(j.amount), job_date: j.job_date, status: j.status, note: j.note || "" }); }} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
+                    <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
+                  </div>
+                </div>
+              ))}
+              {!jobs.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
+            </div>
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
               <tbody>{jobs.map((j) => (
                 <tr key={j.id} className="border-t border-line">
                   <td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
                   <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status)}</td>
                   <td className="p-3 whitespace-nowrap">
-                    <button onClick={() => setJobForm({ id: j.id, customer_id: String(j.customer_id), service_type: j.service_type, amount: String(j.amount), job_date: j.job_date, status: j.status, note: j.note || "" })} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
+                    <button onClick={() => { setJobCustomerMode("existing"); setJobForm({ id: j.id, customer_id: String(j.customer_id), service_type: j.service_type, amount: String(j.amount), job_date: j.job_date, status: j.status, note: j.note || "" }); }} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
                     <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </td>
                 </tr>))}
@@ -412,7 +492,18 @@ export default function Home() {
                     {!report.by_service.length && <tr><td colSpan="3" className="py-4 text-zinc-400">Belum ada data.</td></tr>}
                   </tbody></table>
               </div></div>
-              <div className="bg-panel border border-line rounded-2xl overflow-hidden"><h3 className="font-bold p-4 pb-0">Detail transaksi</h3><div className="overflow-x-auto p-4 pt-2">
+              <div className="bg-panel border border-line rounded-2xl overflow-hidden"><h3 className="font-bold p-4 pb-0">Detail transaksi</h3>
+                <div className="sm:hidden p-4 pt-2 space-y-3">
+                  {report.jobs.map((j) => (
+                    <div key={j.id} className="border border-line rounded-xl p-3">
+                      <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
+                      <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
+                      <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
+                    </div>
+                  ))}
+                  {!report.jobs.length && <p className="text-zinc-400 text-sm">Belum ada data.</p>}
+                </div>
+                <div className="hidden sm:block overflow-x-auto p-4 pt-2">
                 <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">Tanggal</th><th className="py-2 pr-3">Pelanggan</th><th className="py-2 pr-3">Jasa</th><th className="py-2 pr-3">Nominal</th><th className="py-2">Status</th></tr></thead>
                   <tbody>{report.jobs.map((j) => <tr key={j.id} className="border-t border-line"><td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td><td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status)}</td></tr>)}
                     {!report.jobs.length && <tr><td colSpan="5" className="py-4 text-zinc-400">Belum ada data.</td></tr>}
