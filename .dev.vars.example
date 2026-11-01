@@ -1,0 +1,5 @@
+# Salin ke .dev.vars untuk pengembangan lokal SAJA. Jangan pernah commit .dev.vars.
+# Nilai di sini hanya contoh — isi dengan nilai asli di Dashboard Cloudflare untuk produksi.
+ADMIN_USERNAME=andro
+ADMIN_PASSWORD_HASH=ISI_SHA256_HEX_DARI_PASSWORD
+SESSION_SECRET=ISI_STRING_ACAK_MINIMAL_32_KARAKTER

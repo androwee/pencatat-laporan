@@ -1,0 +1,10 @@
+# Cloudflare Pages: build output-nya adalah folder public/ (tanpa build step).
+# D1 binding di-set di Dashboard Pages > Settings > Functions > D1 bindings
+# dengan nama variabel DB. Contoh untuk wrangler CLI (opsional):
+#
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "pencatat-laporan"
+# database_id = "ISI_ID_D1_DARI_DASHBOARD"
+name = "pencatat-laporan"
+pages_build_output = "public"
