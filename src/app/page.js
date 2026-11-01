@@ -1137,14 +1137,30 @@ export default function Home() {
             <div className="flex justify-between gap-3"><span className="text-zinc-400">Status</span>{statusPill(detailJob.status)}</div>
             {detailJob.note && <div className="flex justify-between gap-3"><span className="text-zinc-400">Catatan</span><strong className="text-right">{detailJob.note}</strong></div>}
           </div>
-          <div className="flex gap-2 flex-wrap mt-5">
-            <button onClick={() => downloadInvoice(detailJob)} className="bg-persona hover:bg-persona-dark px-5 py-3 rounded-xl font-bold flex-1">Unduh Invoice (PDF)</button>
-            <button onClick={() => sendInvoiceWhatsApp(detailJob)} className="bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-white flex-1">Kirim via WhatsApp</button>
-            <button onClick={() => { const j = detailJob; setDetailJob(null); openJobModal(j); }} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold">Edit</button>
-            <button onClick={() => setDetailJob(null)} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold">Tutup</button>
+          <div className="mt-5 space-y-2">
+            <button onClick={() => sendInvoiceWhatsApp(detailJob)} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3.5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 shadow">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                <g transform="translate(6.6,6.6) scale(0.45)" strokeWidth="4">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                </g>
+              </svg>
+              Kirim via WhatsApp
+            </button>
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={() => downloadInvoice(detailJob)} aria-label="Unduh Invoice (PDF)" title="Unduh Invoice (PDF)" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
+              </button>
+              <button onClick={() => { const j = detailJob; setDetailJob(null); openJobModal(j); }} aria-label="Edit transaksi" title="Edit transaksi" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
+              </button>
+              <button onClick={() => setDetailJob(null)} aria-label="Tutup" title="Tutup" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18" /><path d="M6 6l12 12" /></svg>
+              </button>
+            </div>
           </div>
           <p className="text-xs text-zinc-400 mt-3">Kirim via WhatsApp membagikan file PDF invoice langsung (di HP Android, pilih WhatsApp di lembar berbagi lalu pilih kontak pelanggan). Bila browser tidak mendukung berbagi file, tombol ini membuka chat wa.me ke nomor WA pelanggan dengan pesan teks invoice — wa.me tidak bisa melampirkan file, jadi dalam kasus itu unduh dulu PDF-nya lalu lampirkan manual.</p>
-          <p className="text-xs text-zinc-400 mt-3">Header invoice memakai informasi usaha dari Pengaturan (ikon roda gigi di atas). Isi dulu di sana bila nama/alamat/telepon/website usaha belum tampil di invoice.</p>
+          <p className="text-xs text-zinc-400 mt-3">Header invoice memakai informasi usaha dari Pengaturan (tombol profil di atas). Isi dulu di sana bila nama/alamat/telepon/website usaha belum tampil di invoice.</p>
         </Modal>
       )}
 
