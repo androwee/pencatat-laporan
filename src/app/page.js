@@ -111,6 +111,7 @@ export default function Home() {
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showJobModal, setShowJobModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("profil");
   const [theme, setTheme] = useState("dark");
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedJobs, setSelectedJobs] = useState([]);
@@ -680,6 +681,7 @@ export default function Home() {
     });
     setSettingsSaved("");
     loadServicePrices();
+    setSettingsTab("profil");
     setShowSettingsModal(true);
   };
 
@@ -1555,7 +1557,14 @@ export default function Home() {
 
       {showSettingsModal && (
         <Modal title="Profil & Pengaturan" onClose={() => setShowSettingsModal(false)}>
-          <div className="space-y-5">
+          <div className="flex gap-1 border-b border-line overflow-x-auto">
+            {[["profil", "Profil"], ["pengaturan", "Pengaturan"], ["aplikasi", "Aplikasi"], ["akun", "Akun"]].map(([key, label]) => (
+              <button key={key} type="button" onClick={() => setSettingsTab(key)}
+                className={`px-3 py-2 text-sm font-bold whitespace-nowrap border-b-2 -mb-px ${settingsTab === key ? "text-red-500 border-persona" : "text-zinc-400 border-transparent"}`}>{label}</button>
+            ))}
+          </div>
+          <div className="space-y-5 pt-4">
+            {settingsTab === "pengaturan" && (<>
             <div>
               <h3 className="font-bold mb-2">Tampilan</h3>
               <p className="text-sm text-zinc-400 mb-3">Pilih tema yang nyaman dipakai. Pilihanmu tersimpan di perangkat ini.</p>
@@ -1574,7 +1583,9 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            <form onSubmit={saveSettings} className="border-t border-line pt-4 space-y-3">
+            </>)}
+            {settingsTab === "profil" && (
+            <form onSubmit={saveSettings} className="space-y-3">
               <h3 className="font-bold">Informasi Usaha</h3>
               <p className="text-sm text-zinc-400">Ditampilkan di invoice PDF. Kosongkan bila belum ada.</p>
               <label className="block text-sm font-medium">Nama usaha / jasa
@@ -1625,6 +1636,8 @@ export default function Home() {
                 {settingsSaved && <span className="text-sm text-emerald-400">{settingsSaved}</span>}
               </div>
             </form>
+            )}
+            {settingsTab === "pengaturan" && (<>
             <div className="border-t border-line pt-4 space-y-3">
               <h3 className="font-bold">Daftar Harga Jasa</h3>
               <p className="text-sm text-zinc-400">Isi sekali, setelah itu harga satuan terisi otomatis saat jasa ini dipilih di form transaksi. Mengubah harga di sini hanya memengaruhi transaksi baru, transaksi lama tidak berubah.</p>
@@ -1676,7 +1689,9 @@ export default function Home() {
               )}
               {backupMessage && <p className="text-sm text-emerald-400">{backupMessage}</p>}
             </div>
-            <div className="border-t border-line pt-4">
+            </>)}
+            {settingsTab === "aplikasi" && (
+            <div>
               <h3 className="font-bold mb-1">Aplikasi</h3>
               {isInstalled ? (
                 <p className="text-sm text-zinc-400">Aplikasi sudah terinstall di perangkat ini, bisa dibuka dari layar utama tanpa browser.</p>
@@ -1689,11 +1704,14 @@ export default function Home() {
                 <p className="text-sm text-zinc-400">Bila tombol install belum muncul: di Chrome Android ketuk ⋮ lalu "Tambahkan ke Layar Utama" atau "Install aplikasi". Di iPhone: ketuk Bagikan lalu "Tambah ke Layar Utama".</p>
               )}
             </div>
-            <div className="border-t border-line pt-4">
+            )}
+            {settingsTab === "akun" && (
+            <div>
               <h3 className="font-bold mb-1">Akun</h3>
               <p className="text-sm text-zinc-400 mb-3">Login sebagai {username}</p>
               <button onClick={handleLogout} className="w-full bg-persona hover:bg-persona-dark px-5 py-3 rounded-xl font-bold">Keluar</button>
             </div>
+            )}
           </div>
         </Modal>
       )}
