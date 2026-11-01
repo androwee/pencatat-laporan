@@ -252,9 +252,12 @@ export async function handleApi(request, env) {
       const ids = [...new Set((body?.ids || []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
       if (!ids.length || ids.length > 200) return json({ error: "Pilih 1–200 pelanggan." }, 400);
       const ph = ids.map(() => "?").join(",");
-      const jobsRes = await qRun(env, `DELETE FROM jobs WHERE customer_id IN (${ph})`, ...ids);
-      const custRes = await qRun(env, `DELETE FROM customers WHERE id IN (${ph})`, ...ids);
-      return json({ ok: true, deleted_customers: custRes.meta?.changes || 0, deleted_jobs: jobsRes.meta?.changes || 0 });
+      // Hitung dulu (bukan meta.changes, yang di runtime D1 tidak selalu terisi untuk DELETE).
+      const nJobs = (await qFirst(env, `SELECT COUNT(*) AS n FROM jobs WHERE customer_id IN (${ph})`, ...ids))?.n || 0;
+      const nCust = (await qFirst(env, `SELECT COUNT(*) AS n FROM customers WHERE id IN (${ph})`, ...ids))?.n || 0;
+      await qRun(env, `DELETE FROM jobs WHERE customer_id IN (${ph})`, ...ids);
+      await qRun(env, `DELETE FROM customers WHERE id IN (${ph})`, ...ids);
+      return json({ ok: true, deleted_customers: nCust, deleted_jobs: nJobs });
     }
 
     if (path === "/api/jobs/bulk-delete" && method === "POST") {
@@ -262,8 +265,9 @@ export async function handleApi(request, env) {
       const ids = [...new Set((body?.ids || []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
       if (!ids.length || ids.length > 200) return json({ error: "Pilih 1–200 transaksi." }, 400);
       const ph = ids.map(() => "?").join(",");
-      const res = await qRun(env, `DELETE FROM jobs WHERE id IN (${ph})`, ...ids);
-      return json({ ok: true, deleted_jobs: res.meta?.changes || 0 });
+      const n = (await qFirst(env, `SELECT COUNT(*) AS n FROM jobs WHERE id IN (${ph})`, ...ids))?.n || 0;
+      await qRun(env, `DELETE FROM jobs WHERE id IN (${ph})`, ...ids);
+      return json({ ok: true, deleted_jobs: n });
     }
 
     const customerIdMatch = path.match(/^\/api\/customers\/(\d+)$/);
