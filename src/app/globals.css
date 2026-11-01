@@ -82,3 +82,10 @@ input[type="month"]::-webkit-calendar-picker-indicator {
 .theme-light .bg-zinc-800:hover {
   background: #d0d5dd;
 }
+
+/* Tombol merah selalu bertuliskan putih, di mode gelap maupun terang.
+   Sebelumnya tombol merah mewarisi warna teks body (putih di mode gelap,
+   hitam di mode terang) sehingga tulisannya jadi hitam di mode terang. */
+.bg-persona {
+  color: #ffffff;
+}

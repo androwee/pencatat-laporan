@@ -609,7 +609,7 @@ export default function Home() {
           <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
             aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
             title={theme === "dark" ? "Mode terang" : "Mode gelap"}
-            className="bg-panel border border-line rounded-full p-2.5 text-zinc-400 hover:text-white shadow">
+            className="bg-panel border border-line rounded-full p-2.5 text-zinc-400 hover:text-persona shadow">
             {theme === "dark"
               ? fieldIcon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
               : fieldIcon(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)}
@@ -641,7 +641,7 @@ export default function Home() {
                     value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
                   <button type="button" onClick={() => setShowPassword(!showPassword)}
                     aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-persona p-1">
                     {showPassword
                       ? fieldIcon(<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 6.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></>)
                       : fieldIcon(<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>)}
@@ -661,7 +661,7 @@ export default function Home() {
 
   const dockBtn = (name, label, icon) => (
     <button key={name} onClick={() => showTab(name)} aria-label={label}
-      className={`flex-1 flex flex-col items-center gap-0.5 px-1 py-2 rounded-full text-[11px] font-bold transition-colors ${tab === name ? "bg-persona text-white shadow" : "text-zinc-400 hover:text-white"}`}>
+      className={`flex-1 flex flex-col items-center gap-0.5 px-1 py-2 text-[11px] font-bold transition-colors ${tab === name ? "text-persona" : "text-zinc-400 hover:text-persona"}`}>
       {icon}<span>{label}</span>
     </button>
   );
@@ -1201,7 +1201,7 @@ export default function Home() {
         {dockBtn("dashboard", "Dashboard", icon(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>))}
         {dockBtn("customers", "Pelanggan", icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>))}
         <button onClick={handleAddNew} aria-label="Tambah catatan baru"
-          className="mx-1 -mt-8 w-14 h-14 rounded-full bg-persona hover:bg-persona-dark text-white flex items-center justify-center shadow-lg shadow-red-900/50 border-4 border-ink shrink-0">
+          className="mx-1 -mt-8 w-14 h-14 rounded-full bg-persona hover:bg-persona-dark text-white flex items-center justify-center shadow-lg shadow-red-900/50 shrink-0">
           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         </button>
         {dockBtn("jobs", "Transaksi", icon(<><path d="M5 3h14v18H5z" /><path d="M8 7h8M8 11h8M8 15h5" /></>))}
