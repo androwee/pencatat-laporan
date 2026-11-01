@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: #0a0a0a;
+  color: #fafafa;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Persona 5-inspired accents: sharp angles, halftone dots, no gradients. */
+.p5-title {
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  transform: skewX(-4deg);
+}
+.p5-slant {
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
+.p5-dots {
+  background-image: radial-gradient(#e60012 1px, transparent 1.5px);
+  background-size: 14px 14px;
+}
+input, select {
+  background: #1c1c1c;
+  color: #fafafa;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  width: 100%;
+  font-size: 1rem;
+}
+input:focus, select:focus {
+  outline: 2px solid #e60012;
+  outline-offset: 1px;
+  border-color: #e60012;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}

@@ -2,15 +2,16 @@
 
 Webapp pribadi untuk mencatat pelanggan jasa dan laporan pemasukan harian sampai bulanan. Dibuat untuk pemakaian sendiri (satu akun), tanpa server/VPS sendiri.
 
-**Stack:** Cloudflare Pages (frontend statis) + Pages Functions (API) + D1 (database SQLite Cloudflare). Semua gratis di paket gratis Cloudflare untuk pemakaian pribadi — Workers 100.000 request/hari, D1 5 juta baris dibaca/hari, 100.000 baris ditulis/hari, storage 5 GB.
+**Stack:** Cloudflare Pages (frontend Next.js + Tailwind CSS, static export) + Pages Functions (API) + D1 (database SQLite Cloudflare). Semua gratis di paket gratis Cloudflare untuk pemakaian pribadi — Workers 100.000 request/hari, D1 5 juta baris dibaca/hari, 100.000 baris ditulis/hari, storage 5 GB.
 
 ## Fitur
 
 - Login satu akun (lihat bagian Login di bawah)
 - Data pelanggan: nama, alamat, nomor telepon/WA, cari berdasarkan nama/WA
 - Transaksi jasa: pelanggan, jenis jasa, nominal (Rp), tanggal, status (lunas / DP / belum bayar), catatan
-- Dashboard: pemasukan hari ini, bulan ini, jumlah pelanggan, transaksi terbaru
-- Laporan: harian, bulanan, atau rentang tanggal — total, per status, per jenis jasa, detail transaksi
+- Dashboard: pemasukan hari ini, bulan ini, jumlah pelanggan, transaksi terbaru, grafik tren pemasukan dan donat per status
+- Laporan: harian, bulanan, atau rentang tanggal — total, per status, per jenis jasa, detail transaksi, grafik batang per tanggal, donat per status, dan batang per jenis jasa
+- Navigasi bawah melayang dengan tombol + di tengah untuk tambah transaksi baru
 - Ekspor laporan ke CSV
 
 ## Login: hanya dari Cloudflare env
@@ -53,9 +54,9 @@ Alternatif tanpa CLI: tempel isi `migrations/schema.sql` di konsol D1 di dashboa
 
 **Workers & Pages > Create > Pages > Connect to Git**, pilih repo ini, lalu:
 
-- Framework preset: None
-- Build command: (kosongkan)
-- Build output directory: `public`
+- Framework preset: Next.js
+- Build command: `npm install && npm run build`
+- Build output directory: `out`
 
 ### 3. Binding D1
 
@@ -79,8 +80,9 @@ Buka URL Pages project, login dengan username/password yang tadi dibuat, lalu:
 ## Pengembangan lokal (opsional)
 
 ```bash
-cp .dev.vars.example .dev.vars   # lalu isi nilai asli di .dev.vars (jangan di-commit)
-npx wrangler pages dev public --d1 DB=pencatat-laporan
+npm install
+npm run dev        # frontend Next.js saja (API /api/* butuh Pages Functions yang jalan di Cloudflare)
+npm run build      # static export ke out/, dicek sebelum push ke main
 ```
 
 ## Backup
@@ -90,10 +92,11 @@ Data pelanggan adalah data pribadi. Ekspor CSV dari tab Laporan secara berkala, 
 ## Struktur
 
 ```
-public/                 Frontend statis (tanpa build step)
-  index.html            Satu halaman: login, dashboard, pelanggan, transaksi, laporan
-  app.js                Logika frontend (fetch ke /api/*)
-  styles.css
+src/app/                Frontend Next.js + Tailwind (tema hitam-merah)
+  page.js               Satu halaman: login, dashboard, pelanggan, transaksi, laporan
+  globals.css           Tema dan gaya dasar
+src/components/Charts.js  Grafik SVG (batang, donat, batang horizontal)
+public/_headers         Header keamanan untuk Pages
 functions/api/          Pages Functions, satu file per endpoint
   login.js logout.js me.js customers.js customers/[id].js
   jobs.js jobs/[id].js reports.js export.js

@@ -1,4 +1,5 @@
-# Cloudflare Pages: build output-nya adalah folder public/ (tanpa build step).
+# Cloudflare Pages: frontend Next.js (static export) dengan build command
+# `npm install && npm run build`, output folder out/.
 # D1 binding di-set di Dashboard Pages > Settings > Functions > D1 bindings
 # dengan nama variabel DB. Contoh untuk wrangler CLI (opsional):
 #
@@ -7,4 +8,4 @@
 # database_name = "pencatat-laporan"
 # database_id = "ISI_ID_D1_DARI_DASHBOARD"
 name = "pencatat-laporan"
-pages_build_output = "public"
+pages_build_output = "out"
