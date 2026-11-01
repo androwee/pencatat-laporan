@@ -12,6 +12,9 @@ Webapp pribadi untuk mencatat pelanggan jasa dan laporan pemasukan harian sampai
 - Dashboard: pemasukan hari ini, bulan ini, jumlah pelanggan, transaksi terbaru, grafik tren pemasukan dan donat per status
 - Laporan: harian, bulanan, atau rentang tanggal — total, per status, per jenis jasa, detail transaksi, grafik batang per tanggal, donat per status, dan batang per jenis jasa
 - Navigasi bawah melayang dengan tombol + di tengah untuk tambah transaksi baru
+- Hapus massal: centang beberapa pelanggan/transaksi lalu hapus sekaligus (hapus pelanggan juga menghapus transaksinya)
+- Invoice PDF: buka detail transaksi di tab Transaksi, lalu unduh invoice PDF (header memakai informasi usaha dari Pengaturan)
+- Pengaturan: tema gelap/terang dan informasi usaha (nama, alamat, telepon, website) yang dipakai di invoice
 - Ekspor laporan ke CSV
 
 ## Login: hanya dari Cloudflare env

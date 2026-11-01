@@ -109,6 +109,12 @@ export default function Home() {
   const [showJobModal, setShowJobModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [theme, setTheme] = useState("dark");
+  const [selectedCustomers, setSelectedCustomers] = useState([]);
+  const [selectedJobs, setSelectedJobs] = useState([]);
+  const [detailJob, setDetailJob] = useState(null);
+  const [settings, setSettings] = useState({});
+  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "" });
+  const [settingsSaved, setSettingsSaved] = useState("");
   const [jobFilterType, setJobFilterType] = useState("all");
   const [jobFilterWeek, setJobFilterWeek] = useState(isoWeek(todayWib()));
   const [jobFilterMonth, setJobFilterMonth] = useState(todayWib().slice(0, 7));
@@ -177,6 +183,19 @@ export default function Home() {
     } catch (e) { setError(e.message); }
   }, [jobFilterRange, jobFilterStatus]);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const data = await api("/api/settings");
+      setSettings(data.settings || {});
+      setSettingsForm({
+        business_name: data.settings?.business_name || "",
+        business_address: data.settings?.business_address || "",
+        business_phone: data.settings?.business_phone || "",
+        business_website: data.settings?.business_website || "",
+      });
+    } catch (e) { /* settings opsional, abaikan */ }
+  }, []);
+
   const loadReport = useCallback(async () => {
     try {
       setError("");
@@ -206,9 +225,10 @@ export default function Home() {
         setView("app");
         loadDashboard();
         loadCustomers();
+        loadSettings();
       } catch { setView("login"); }
     })();
-  }, [loadDashboard, loadCustomers]);
+  }, [loadDashboard, loadCustomers, loadSettings]);
 
   useEffect(() => { if (tab === "customers") loadCustomers(search); }, [search, tab, loadCustomers]);
 
@@ -238,6 +258,7 @@ export default function Home() {
       setView("app");
       loadDashboard();
       loadCustomers();
+      loadSettings();
     } catch (err) { setLoginError(err.message); }
   };
 
@@ -326,6 +347,107 @@ export default function Home() {
     loadJobs();
   };
 
+  const toggleSelect = (list, setList, id) => {
+    setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+  };
+  const toggleSelectAll = (list, setList, items) => {
+    const ids = items.map((x) => x.id);
+    setList(list.length === ids.length && ids.length > 0 ? [] : ids);
+  };
+
+  const bulkDeleteCustomers = async () => {
+    if (!selectedCustomers.length) return;
+    if (!confirm(`Hapus ${selectedCustomers.length} pelanggan beserta semua transaksinya? Tindakan ini tidak bisa dibatalkan.`)) return;
+    try {
+      await api("/api/customers/bulk-delete", { method: "POST", body: JSON.stringify({ ids: selectedCustomers }) });
+      setSelectedCustomers([]);
+      loadCustomers(search);
+      loadJobs();
+      if (tab === "dashboard") loadDashboard();
+    } catch (err) { setError(err.message); }
+  };
+
+  const bulkDeleteJobs = async () => {
+    if (!selectedJobs.length) return;
+    if (!confirm(`Hapus ${selectedJobs.length} transaksi yang dipilih? Tindakan ini tidak bisa dibatalkan.`)) return;
+    try {
+      await api("/api/jobs/bulk-delete", { method: "POST", body: JSON.stringify({ ids: selectedJobs }) });
+      setSelectedJobs([]);
+      loadJobs();
+      if (tab === "dashboard") loadDashboard();
+    } catch (err) { setError(err.message); }
+  };
+
+  const openSettings = () => {
+    setSettingsForm({
+      business_name: settings.business_name || "",
+      business_address: settings.business_address || "",
+      business_phone: settings.business_phone || "",
+      business_website: settings.business_website || "",
+    });
+    setSettingsSaved("");
+    setShowSettingsModal(true);
+  };
+
+  const saveSettings = async (e) => {
+    e.preventDefault();
+    try {
+      const data = await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsForm) });
+      setSettings(data.settings || {});
+      setSettingsSaved("Informasi usaha tersimpan.");
+    } catch (err) { setError(err.message); }
+  };
+
+  const downloadInvoice = async (job) => {
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF();
+      const businessName = settings.business_name || "Pencatat Laporan";
+      const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
+      const statusLabel = job.status === "lunas" ? "Lunas" : job.status === "dp" ? "DP" : "Belum bayar";
+      const invNo = `INV-${String(job.job_date).replaceAll("-", "")}-${String(job.id).padStart(4, "0")}`;
+      let y = 18;
+      doc.setFontSize(18); doc.setFont("helvetica", "bold");
+      doc.text(businessName, 14, y); y += 8;
+      doc.setFontSize(11); doc.setFont("helvetica", "normal");
+      const businessLines = [settings.business_address, settings.business_phone, settings.business_website].filter(Boolean);
+      businessLines.forEach((line) => { doc.text(String(line), 14, y); y += 6; });
+      y += 4;
+      doc.setDrawColor(230, 0, 18); doc.setLineWidth(0.8); doc.line(14, y, 196, y); y += 10;
+      doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.text("INVOICE", 14, y); y += 8;
+      doc.setFontSize(11); doc.setFont("helvetica", "normal");
+      doc.text(`Nomor: ${invNo}`, 14, y); y += 6;
+      doc.text(`Tanggal: ${job.job_date}`, 14, y); y += 6;
+      doc.text(`Status: ${statusLabel}`, 14, y); y += 10;
+      doc.setFont("helvetica", "bold"); doc.text("Ditagihkan kepada:", 14, y); y += 7;
+      doc.setFont("helvetica", "normal");
+      const custLines = doc.splitTextToSize(`${job.customer_name || customer.name || ""}${customer.phone ? ` (${customer.phone})` : job.customer_phone ? ` (${job.customer_phone})` : ""}`, 182);
+      custLines.forEach((line) => { doc.text(line, 14, y); y += 6; });
+      if (customer.address) { doc.splitTextToSize(customer.address, 182).forEach((line) => { doc.text(line, 14, y); y += 6; }); }
+      y += 4;
+      doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.4); doc.line(14, y, 196, y); y += 8;
+      doc.setFont("helvetica", "bold"); doc.text("Jenis jasa", 14, y); doc.text("Nominal", 196, y, { align: "right" }); y += 7;
+      doc.line(14, y, 196, y); y += 8;
+      doc.setFont("helvetica", "normal");
+      doc.splitTextToSize(job.service_type, 120).forEach((line) => { doc.text(line, 14, y); y += 6; });
+      doc.text(fmtRp(job.amount), 196, y - 6, { align: "right" });
+      if (job.note) { y += 2; doc.setFontSize(10); doc.text(`Catatan: ${job.note}`, 14, y); doc.setFontSize(11); y += 6; }
+      y += 4; doc.line(14, y, 196, y); y += 9;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+      doc.text("Total", 14, y); doc.text(fmtRp(job.amount), 196, y, { align: "right" }); y += 12;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+      const note = job.status === "lunas"
+        ? "Status pembayaran: Lunas. Terima kasih atas pembayaran Anda."
+        : job.status === "dp"
+          ? "Status pembayaran: DP. Nominal di atas adalah total jasa; sisa pembayaran sesuai kesepakatan."
+          : "Status pembayaran: Belum bayar. Mohon selesaikan pembayaran.";
+      doc.splitTextToSize(note, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
+      y += 6;
+      doc.setFontSize(10); doc.text("Invoice ini dibuat dari aplikasi Pencatat Laporan.", 14, y);
+      doc.save(`invoice-${job.id}-${job.job_date}.pdf`);
+    } catch (err) { setError(`Gagal membuat invoice: ${err.message}`); }
+  };
+
   if (view === "loading") return <main className="max-w-3xl mx-auto p-6 text-zinc-400">Memuat…</main>;
 
   if (view === "login") {
@@ -379,7 +501,7 @@ export default function Home() {
             <p className="text-zinc-400 text-sm mt-1">Login sebagai {username}</p>
           </div>
         </div>
-        <button onClick={() => setShowSettingsModal(true)} aria-label="Pengaturan"
+        <button onClick={openSettings} aria-label="Pengaturan"
           className="bg-zinc-800 hover:bg-zinc-700 w-11 h-11 rounded-full flex items-center justify-center shrink-0">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="3" />
@@ -407,7 +529,14 @@ export default function Home() {
             <div className="sm:hidden p-4 pt-2 space-y-3">
               {dash.recent.map((j) => (
                 <div key={j.id} className="border border-line rounded-xl p-3">
-                  <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
+                  <div className="flex justify-between gap-2">
+                    <span className="flex items-start gap-2">
+                      <input type="checkbox" className="w-4 h-4 accent-[#e60012] mt-1 shrink-0" style={{ width: "auto" }}
+                        checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} />
+                      <strong>{j.customer_name}</strong>
+                    </span>
+                    {statusPill(j.status)}
+                  </div>
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
                 </div>
@@ -441,11 +570,29 @@ export default function Home() {
           <label className="block text-sm font-medium">Cari pelanggan
             <input className="mt-1" placeholder="Nama atau nomor WA…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </label>
+          <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+              <input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }}
+                checked={customers.length > 0 && selectedCustomers.length === customers.length}
+                onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} />
+              Pilih semua ({customers.length})
+            </label>
+            <span className="text-sm text-zinc-400">{selectedCustomers.length} dipilih</span>
+            <button onClick={bulkDeleteCustomers} disabled={!selectedCustomers.length}
+              className="bg-persona hover:bg-persona-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">Hapus yang dipilih</button>
+            {selectedCustomers.length > 0 && (
+              <button onClick={() => setSelectedCustomers([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
+            )}
+          </div>
           <div className="bg-panel border border-line rounded-2xl overflow-hidden">
             <div className="sm:hidden p-4 space-y-3">
               {customers.map((c) => (
                 <div key={c.id} className="border border-line rounded-xl p-3">
-                  <strong>{c.name}</strong>
+                  <div className="flex items-start gap-2">
+                    <input type="checkbox" className="w-4 h-4 accent-[#e60012] mt-1 shrink-0" style={{ width: "auto" }}
+                      checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} />
+                    <strong>{c.name}</strong>
+                  </div>
                   <div className="text-zinc-400 text-sm mt-1">{c.address || "—"}</div>
                   <div className="text-sm mt-1">{c.phone || "—"}</div>
                   <div className="flex gap-2 mt-3">
@@ -457,10 +604,10 @@ export default function Home() {
               {!customers.length && <p className="text-zinc-400 text-sm">Belum ada pelanggan.</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3"></th></tr></thead>
+            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={customers.length > 0 && selectedCustomers.length === customers.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3"></th></tr></thead>
               <tbody>{customers.map((c) => (
                 <tr key={c.id} className="border-t border-line">
-                  <td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td>
+                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td>
                   <td className="p-3 whitespace-nowrap">
                     <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
                     <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
@@ -515,6 +662,20 @@ export default function Home() {
             </div>
             {jobFilterType !== "all" && (() => { const r = jobFilterRange(); return r.from ? <p className="text-sm text-zinc-400">Periode: {r.from} sampai {r.to}</p> : null; })()}
           </div>
+          <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+              <input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }}
+                checked={jobs.length > 0 && selectedJobs.length === jobs.length}
+                onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} />
+              Pilih semua ({jobs.length})
+            </label>
+            <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
+            <button onClick={bulkDeleteJobs} disabled={!selectedJobs.length}
+              className="bg-persona hover:bg-persona-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">Hapus yang dipilih</button>
+            {selectedJobs.length > 0 && (
+              <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
+            )}
+          </div>
           <div className="bg-panel border border-line rounded-2xl overflow-hidden">
             <div className="sm:hidden p-4 space-y-3">
               {jobs.map((j) => (
@@ -523,7 +684,8 @@ export default function Home() {
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
                   {j.note && <div className="text-zinc-400 text-sm mt-1">{j.note}</div>}
-                  <div className="flex gap-2 mt-3">
+                  <div className="flex gap-2 mt-3 flex-wrap">
+                    <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Detail</button>
                     <button onClick={() => openJobModal(j)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
                     <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </div>
@@ -532,12 +694,13 @@ export default function Home() {
               {!jobs.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
+            <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={jobs.length > 0 && selectedJobs.length === jobs.length} onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} aria-label="Pilih semua transaksi" /></th><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
               <tbody>{jobs.map((j) => (
                 <tr key={j.id} className="border-t border-line">
-                  <td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
+                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} /></td><td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
                   <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status)}</td>
                   <td className="p-3 whitespace-nowrap">
+                    <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Detail</button>
                     <button onClick={() => openJobModal(j)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
                     <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </td>
@@ -708,12 +871,57 @@ export default function Home() {
                 </button>
               </div>
             </div>
+            <form onSubmit={saveSettings} className="border-t border-line pt-4 space-y-3">
+              <h3 className="font-bold">Informasi Usaha</h3>
+              <p className="text-sm text-zinc-400">Ditampilkan di header invoice PDF. Kosongkan bila belum ada.</p>
+              <label className="block text-sm font-medium">Nama usaha / jasa
+                <input className="mt-1" value={settingsForm.business_name} onChange={(e) => setSettingsForm({ ...settingsForm, business_name: e.target.value })} placeholder="cth: Jasa Sedot WC Andro" />
+              </label>
+              <label className="block text-sm font-medium">Alamat usaha
+                <input className="mt-1" value={settingsForm.business_address} onChange={(e) => setSettingsForm({ ...settingsForm, business_address: e.target.value })} />
+              </label>
+              <label className="block text-sm font-medium">Nomor telepon
+                <input className="mt-1" inputMode="tel" value={settingsForm.business_phone} onChange={(e) => setSettingsForm({ ...settingsForm, business_phone: e.target.value })} />
+              </label>
+              <label className="block text-sm font-medium">Website
+                <input className="mt-1" inputMode="url" value={settingsForm.business_website} onChange={(e) => setSettingsForm({ ...settingsForm, business_website: e.target.value })} placeholder="https://…" />
+              </label>
+              <div className="flex items-center gap-3">
+                <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Simpan informasi usaha</button>
+                {settingsSaved && <span className="text-sm text-emerald-400">{settingsSaved}</span>}
+              </div>
+            </form>
             <div className="border-t border-line pt-4">
               <h3 className="font-bold mb-1">Akun</h3>
               <p className="text-sm text-zinc-400 mb-3">Login sebagai {username}</p>
               <button onClick={handleLogout} className="w-full bg-persona hover:bg-persona-dark px-5 py-3 rounded-xl font-bold">Keluar</button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {detailJob && (
+        <Modal title="Detail transaksi" onClose={() => setDetailJob(null)}>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between gap-3"><span className="text-zinc-400">Tanggal</span><strong>{detailJob.job_date}</strong></div>
+            <div className="flex justify-between gap-3"><span className="text-zinc-400">Pelanggan</span><strong className="text-right">{detailJob.customer_name}</strong></div>
+            {(customers.find((c) => c.id === Number(detailJob.customer_id))?.phone || detailJob.customer_phone) && (
+              <div className="flex justify-between gap-3"><span className="text-zinc-400">Telepon / WA</span><strong>{customers.find((c) => c.id === Number(detailJob.customer_id))?.phone || detailJob.customer_phone}</strong></div>
+            )}
+            {customers.find((c) => c.id === Number(detailJob.customer_id))?.address && (
+              <div className="flex justify-between gap-3"><span className="text-zinc-400">Alamat</span><strong className="text-right">{customers.find((c) => c.id === Number(detailJob.customer_id)).address}</strong></div>
+            )}
+            <div className="flex justify-between gap-3"><span className="text-zinc-400">Jenis jasa</span><strong className="text-right">{detailJob.service_type}</strong></div>
+            <div className="flex justify-between gap-3"><span className="text-zinc-400">Nominal</span><strong>{fmtRp(detailJob.amount)}</strong></div>
+            <div className="flex justify-between gap-3"><span className="text-zinc-400">Status</span>{statusPill(detailJob.status)}</div>
+            {detailJob.note && <div className="flex justify-between gap-3"><span className="text-zinc-400">Catatan</span><strong className="text-right">{detailJob.note}</strong></div>}
+          </div>
+          <div className="flex gap-2 flex-wrap mt-5">
+            <button onClick={() => downloadInvoice(detailJob)} className="bg-persona hover:bg-persona-dark px-5 py-3 rounded-xl font-bold flex-1">Unduh Invoice (PDF)</button>
+            <button onClick={() => { const j = detailJob; setDetailJob(null); openJobModal(j); }} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold">Edit</button>
+            <button onClick={() => setDetailJob(null)} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold">Tutup</button>
+          </div>
+          <p className="text-xs text-zinc-400 mt-3">Header invoice memakai informasi usaha dari Pengaturan (ikon roda gigi di atas). Isi dulu di sana bila nama/alamat/telepon/website usaha belum tampil di invoice.</p>
         </Modal>
       )}
 

@@ -198,6 +198,31 @@ export async function handleApi(request, env) {
       return json({ username });
     }
 
+    // ---- Pengaturan usaha (key-value di D1, bukan env) ----
+    if (path === "/api/settings" && (method === "GET" || method === "PUT")) {
+      await qRun(env, "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')");
+      if (method === "GET") {
+        const rows = await qAll(env, "SELECT key, value FROM settings");
+        const settings = {};
+        rows.forEach((r) => { settings[r.key] = r.value; });
+        return json({ settings });
+      }
+      const body = await readJson(request);
+      if (!body) return json({ error: "Body JSON tidak valid." }, 400);
+      const allowed = ["business_name", "business_address", "business_phone", "business_website"];
+      for (const key of allowed) {
+        if (key in body) {
+          const value = String(body[key] || "").trim();
+          if (value.length > 200) return json({ error: `Isi ${key} maksimal 200 karakter.` }, 400);
+          await qRun(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value);
+        }
+      }
+      const rows = await qAll(env, "SELECT key, value FROM settings");
+      const settings = {};
+      rows.forEach((r) => { settings[r.key] = r.value; });
+      return json({ settings });
+    }
+
     // ---- Pelanggan ----
     if (path === "/api/customers" && method === "GET") {
       const q = (url.searchParams.get("q") || "").trim();
@@ -219,6 +244,26 @@ export async function handleApi(request, env) {
       );
       const row = await qFirst(env, "SELECT * FROM customers WHERE id = ?", res.meta.last_row_id);
       return json({ customer: row }, 201);
+    }
+
+    // ---- Hapus massal ----
+    if (path === "/api/customers/bulk-delete" && method === "POST") {
+      const body = await readJson(request);
+      const ids = [...new Set((body?.ids || []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
+      if (!ids.length || ids.length > 200) return json({ error: "Pilih 1–200 pelanggan." }, 400);
+      const ph = ids.map(() => "?").join(",");
+      const jobsRes = await qRun(env, `DELETE FROM jobs WHERE customer_id IN (${ph})`, ...ids);
+      const custRes = await qRun(env, `DELETE FROM customers WHERE id IN (${ph})`, ...ids);
+      return json({ ok: true, deleted_customers: custRes.meta?.changes || 0, deleted_jobs: jobsRes.meta?.changes || 0 });
+    }
+
+    if (path === "/api/jobs/bulk-delete" && method === "POST") {
+      const body = await readJson(request);
+      const ids = [...new Set((body?.ids || []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
+      if (!ids.length || ids.length > 200) return json({ error: "Pilih 1–200 transaksi." }, 400);
+      const ph = ids.map(() => "?").join(",");
+      const res = await qRun(env, `DELETE FROM jobs WHERE id IN (${ph})`, ...ids);
+      return json({ ok: true, deleted_jobs: res.meta?.changes || 0 });
     }
 
     const customerIdMatch = path.match(/^\/api\/customers\/(\d+)$/);
