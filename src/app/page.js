@@ -47,6 +47,49 @@ function Stat({ label, value }) {
 const emptyCustomer = { id: "", name: "", address: "", phone: "" };
 const emptyJob = { id: "", customer_id: "", service_type: "", amount: "", job_date: todayWib(), status: "lunas", note: "" };
 
+function Modal({ title, onClose, children }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-label={title}>
+      <button aria-label="Tutup" onClick={onClose} className="absolute inset-0 bg-black/70" />
+      <div className="relative bg-panel border border-line rounded-t-3xl sm:rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-5 shadow-2xl">
+        <div className="flex justify-between items-start gap-3 mb-4">
+          <h2 className="font-bold text-lg">{title}</h2>
+          <button onClick={onClose} aria-label="Tutup popup" className="bg-zinc-800 w-9 h-9 rounded-full font-bold shrink-0">×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function isoWeek(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  const day = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - day + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+function weekToRange(weekStr) {
+  const m = /^(\d{4})-W(\d{2})$/.exec(weekStr || "");
+  if (!m) return { from: "", to: "" };
+  const jan4 = new Date(Date.UTC(Number(m[1]), 0, 4));
+  const day = (jan4.getUTCDay() + 6) % 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - day + (Number(m[2]) - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  return { from: monday.toISOString().slice(0, 10), to: sunday.toISOString().slice(0, 10) };
+}
+
+function monthToRange(monthStr) {
+  const [y, mo] = (monthStr || "").split("-").map(Number);
+  if (!y || !mo) return { from: "", to: "" };
+  const last = new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10);
+  return { from: `${monthStr}-01`, to: last };
+}
+
 export default function Home() {
   const [view, setView] = useState("loading");
   const [username, setUsername] = useState("");
@@ -62,6 +105,14 @@ export default function Home() {
   const [jobForm, setJobForm] = useState(emptyJob);
   const [jobCustomerMode, setJobCustomerMode] = useState("existing");
   const [newCustomer, setNewCustomer] = useState({ name: "", address: "", phone: "" });
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showJobModal, setShowJobModal] = useState(false);
+  const [jobFilterType, setJobFilterType] = useState("all");
+  const [jobFilterWeek, setJobFilterWeek] = useState(isoWeek(todayWib()));
+  const [jobFilterMonth, setJobFilterMonth] = useState(todayWib().slice(0, 7));
+  const [jobFilterFrom, setJobFilterFrom] = useState(todayWib().slice(0, 7) + "-01");
+  const [jobFilterTo, setJobFilterTo] = useState(todayWib());
+  const [jobFilterStatus, setJobFilterStatus] = useState("");
   const [report, setReport] = useState(null);
   const [reportPeriod, setReportPeriod] = useState("monthly");
   const [reportDate, setReportDate] = useState(todayWib());
@@ -102,13 +153,27 @@ export default function Home() {
     } catch (e) { setError(e.message); }
   }, []);
 
-  const loadJobs = useCallback(async () => {
+  const jobFilterRange = useCallback(() => {
+    if (jobFilterType === "weekly") return weekToRange(jobFilterWeek);
+    if (jobFilterType === "monthly") return monthToRange(jobFilterMonth);
+    if (jobFilterType === "custom") return { from: jobFilterFrom, to: jobFilterTo };
+    return { from: "", to: "" };
+  }, [jobFilterType, jobFilterWeek, jobFilterMonth, jobFilterFrom, jobFilterTo]);
+
+  const loadJobs = useCallback(async (override) => {
     try {
       setError("");
-      const data = await api("/api/jobs");
+      const range = override || jobFilterRange();
+      const status = override && "status" in override ? override.status : jobFilterStatus;
+      const params = new URLSearchParams();
+      if (range.from) params.set("from", range.from);
+      if (range.to) params.set("to", range.to);
+      if (status) params.set("status", status);
+      const qs = params.toString();
+      const data = await api(`/api/jobs${qs ? `?${qs}` : ""}`);
       setJobs(data.jobs);
     } catch (e) { setError(e.message); }
-  }, []);
+  }, [jobFilterRange, jobFilterStatus]);
 
   const loadReport = useCallback(async () => {
     try {
@@ -138,9 +203,10 @@ export default function Home() {
         setUsername(me.username);
         setView("app");
         loadDashboard();
+        loadCustomers();
       } catch { setView("login"); }
     })();
-  }, [loadDashboard]);
+  }, [loadDashboard, loadCustomers]);
 
   useEffect(() => { if (tab === "customers") loadCustomers(search); }, [search, tab, loadCustomers]);
 
@@ -153,6 +219,7 @@ export default function Home() {
       setUsername(me.username);
       setView("app");
       loadDashboard();
+      loadCustomers();
     } catch (err) { setLoginError(err.message); }
   };
 
@@ -161,17 +228,26 @@ export default function Home() {
     location.reload();
   };
 
-  const handleAddNew = () => {
-    setJobForm({ ...emptyJob, job_date: todayWib() });
-    setJobCustomerMode("existing");
-    setNewCustomer({ name: "", address: "", phone: "" });
-    setTab("jobs");
-    loadCustomers(); loadJobs();
-    setTimeout(() => {
-      document.getElementById("job-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      document.getElementById("job-customer-select")?.focus();
-    }, 100);
+  const openJobModal = (job) => {
+    if (job) {
+      setJobCustomerMode("existing");
+      setJobForm({ id: job.id, customer_id: String(job.customer_id), service_type: job.service_type, amount: String(job.amount), job_date: job.job_date, status: job.status, note: job.note || "" });
+    } else {
+      setJobForm({ ...emptyJob, job_date: todayWib() });
+      setJobCustomerMode("existing");
+      setNewCustomer({ name: "", address: "", phone: "" });
+    }
+    loadCustomers();
+    setShowJobModal(true);
   };
+
+  const openCustomerModal = (customer) => {
+    if (customer) setCustomerForm({ id: customer.id, name: customer.name, address: customer.address, phone: customer.phone });
+    else setCustomerForm(emptyCustomer);
+    setShowCustomerModal(true);
+  };
+
+  const handleAddNew = () => openJobModal(null);
 
   const submitCustomer = async (e) => {
     e.preventDefault();
@@ -182,6 +258,7 @@ export default function Home() {
         body: JSON.stringify({ name: customerForm.name, address: customerForm.address, phone: customerForm.phone }),
       });
       setCustomerForm(emptyCustomer);
+      setShowCustomerModal(false);
       loadCustomers(search);
     } catch (err) { setError(err.message); }
   };
@@ -210,8 +287,13 @@ export default function Home() {
       setJobForm({ ...emptyJob, job_date: todayWib() });
       setJobCustomerMode("existing");
       setNewCustomer({ name: "", address: "", phone: "" });
+      setShowJobModal(false);
+      // Transaksi baru langsung terlihat: reset filter ke Semua, lalu muat ulang.
+      setJobFilterType("all");
+      setJobFilterStatus("");
       loadCustomers();
-      loadJobs();
+      loadJobs({ from: "", to: "", status: "" });
+      if (tab === "dashboard") loadDashboard();
     } catch (err) { setError(err.message); }
   };
 
@@ -328,16 +410,10 @@ export default function Home() {
 
       {tab === "customers" && (
         <div className="mt-5 space-y-5">
-          <form onSubmit={submitCustomer} className="bg-panel border border-line rounded-2xl p-4 space-y-3">
-            <h2 className="font-bold">Tambah / edit pelanggan</h2>
-            <label className="block text-sm font-medium">Nama *<input className="mt-1" required value={customerForm.name} onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })} /></label>
-            <label className="block text-sm font-medium">Alamat<input className="mt-1" value={customerForm.address} onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })} /></label>
-            <label className="block text-sm font-medium">Nomor telepon / WA<input className="mt-1" inputMode="tel" value={customerForm.phone} onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })} /></label>
-            <div className="flex gap-2 flex-wrap">
-              <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Simpan pelanggan</button>
-              <button type="button" onClick={() => setCustomerForm(emptyCustomer)} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
-            </div>
-          </form>
+          <div className="flex justify-between items-center gap-3">
+            <h2 className="font-bold text-lg">Pelanggan</h2>
+            <button onClick={() => openCustomerModal(null)} className="bg-persona hover:bg-persona-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Pelanggan</button>
+          </div>
           <label className="block text-sm font-medium">Cari pelanggan
             <input className="mt-1" placeholder="Nama atau nomor WA…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </label>
@@ -349,7 +425,7 @@ export default function Home() {
                   <div className="text-zinc-400 text-sm mt-1">{c.address || "—"}</div>
                   <div className="text-sm mt-1">{c.phone || "—"}</div>
                   <div className="flex gap-2 mt-3">
-                    <button onClick={() => setCustomerForm({ id: c.id, name: c.name, address: c.address, phone: c.phone })} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
+                    <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
                     <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </div>
                 </div>
@@ -362,7 +438,7 @@ export default function Home() {
                 <tr key={c.id} className="border-t border-line">
                   <td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td>
                   <td className="p-3 whitespace-nowrap">
-                    <button onClick={() => setCustomerForm({ id: c.id, name: c.name, address: c.address, phone: c.phone })} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
+                    <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
                     <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </td>
                 </tr>))}
@@ -374,52 +450,47 @@ export default function Home() {
 
       {tab === "jobs" && (
         <div className="mt-5 space-y-5">
-          <form id="job-form" onSubmit={submitJob} className="bg-panel border border-line rounded-2xl p-4 space-y-3">
-            <h2 className="font-bold">Tambah / edit transaksi</h2>
-            {!jobForm.id && (
-              <div className="flex gap-2" role="group" aria-label="Pilih pelanggan">
-                <button type="button" onClick={() => setJobCustomerMode("existing")}
-                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "existing" ? "bg-persona text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan lama</button>
-                <button type="button" onClick={() => setJobCustomerMode("new")}
-                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "new" ? "bg-persona text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan baru</button>
-              </div>
-            )}
-            <div className="grid sm:grid-cols-2 gap-3">
-              {jobCustomerMode === "new" && !jobForm.id ? (
-                <>
-                  <label className="block text-sm font-medium sm:col-span-2">Nama pelanggan baru *
-                    <input className="mt-1" required value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })} placeholder="Nama pelanggan baru, otomatis tersimpan ke list pelanggan" />
-                  </label>
-                  <label className="block text-sm font-medium">Alamat pelanggan baru
-                    <input className="mt-1" value={newCustomer.address} onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })} />
-                  </label>
-                  <label className="block text-sm font-medium">Nomor telepon / WA pelanggan baru
-                    <input className="mt-1" inputMode="tel" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} />
-                  </label>
-                </>
-              ) : (
-                <label className="block text-sm font-medium">Pelanggan *
-                  <select id="job-customer-select" className="mt-1" required value={jobForm.customer_id} onChange={(e) => setJobForm({ ...jobForm, customer_id: e.target.value })}>
-                    <option value="">-- pilih pelanggan --</option>
-                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
-                  </select>
-                </label>
-              )}
-              <label className="block text-sm font-medium">Jenis jasa *<input className="mt-1" required placeholder="cth: Sedot WC, Service AC…" value={jobForm.service_type} onChange={(e) => setJobForm({ ...jobForm, service_type: e.target.value })} /></label>
-              <label className="block text-sm font-medium">Nominal (Rp) *<input className="mt-1" type="number" min="0" step="1" required value={jobForm.amount} onChange={(e) => setJobForm({ ...jobForm, amount: e.target.value })} /></label>
-              <label className="block text-sm font-medium">Tanggal *<input className="mt-1" type="date" required value={jobForm.job_date} onChange={(e) => setJobForm({ ...jobForm, job_date: e.target.value })} /></label>
-              <label className="block text-sm font-medium">Status
-                <select className="mt-1" value={jobForm.status} onChange={(e) => setJobForm({ ...jobForm, status: e.target.value })}>
-                  <option value="lunas">Lunas</option><option value="dp">DP</option><option value="belum">Belum bayar</option>
+          <div className="flex justify-between items-center gap-3">
+            <h2 className="font-bold text-lg">Transaksi</h2>
+            <button onClick={() => openJobModal(null)} className="bg-persona hover:bg-persona-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Transaksi</button>
+          </div>
+          <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
+            <h3 className="font-bold">Filter transaksi</h3>
+            <div className="flex flex-wrap gap-3 items-end">
+              <label className="block text-sm font-medium flex-1 min-w-[140px]">Periode
+                <select className="mt-1" value={jobFilterType} onChange={(e) => setJobFilterType(e.target.value)}>
+                  <option value="all">Semua</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option><option value="custom">Custom</option>
                 </select>
               </label>
-              <label className="block text-sm font-medium">Catatan<input className="mt-1" value={jobForm.note} onChange={(e) => setJobForm({ ...jobForm, note: e.target.value })} /></label>
+              {jobFilterType === "weekly" && (
+                <label className="block text-sm font-medium flex-1 min-w-[140px]">Minggu
+                  <input className="mt-1" type="week" value={jobFilterWeek} onChange={(e) => setJobFilterWeek(e.target.value)} />
+                </label>
+              )}
+              {jobFilterType === "monthly" && (
+                <label className="block text-sm font-medium flex-1 min-w-[140px]">Bulan
+                  <input className="mt-1" type="month" value={jobFilterMonth} onChange={(e) => setJobFilterMonth(e.target.value)} />
+                </label>
+              )}
+              {jobFilterType === "custom" && (
+                <>
+                  <label className="block text-sm font-medium flex-1 min-w-[140px]">Dari<input className="mt-1" type="date" value={jobFilterFrom} onChange={(e) => setJobFilterFrom(e.target.value)} /></label>
+                  <label className="block text-sm font-medium flex-1 min-w-[140px]">Sampai<input className="mt-1" type="date" value={jobFilterTo} onChange={(e) => setJobFilterTo(e.target.value)} /></label>
+                </>
+              )}
+              <label className="block text-sm font-medium flex-1 min-w-[140px]">Status
+                <select className="mt-1" value={jobFilterStatus} onChange={(e) => setJobFilterStatus(e.target.value)}>
+                  <option value="">Semua status</option><option value="lunas">Lunas</option><option value="dp">DP</option><option value="belum">Belum bayar</option>
+                </select>
+              </label>
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Simpan transaksi</button>
-              <button type="button" onClick={() => { setJobForm({ ...emptyJob, job_date: todayWib() }); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
+            <div className="flex gap-2 flex-wrap items-center">
+              <button onClick={() => loadJobs()} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Terapkan filter</button>
+              <button onClick={() => { setJobFilterType("all"); setJobFilterStatus(""); loadJobs({ from: "", to: "", status: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Reset</button>
+              <span className="text-sm text-zinc-400">{jobs.length} transaksi · total {fmtRp(jobs.reduce((sum, j) => sum + Number(j.amount), 0))}</span>
             </div>
-          </form>
+            {jobFilterType !== "all" && (() => { const r = jobFilterRange(); return r.from ? <p className="text-sm text-zinc-400">Periode: {r.from} sampai {r.to}</p> : null; })()}
+          </div>
           <div className="bg-panel border border-line rounded-2xl overflow-hidden">
             <div className="sm:hidden p-4 space-y-3">
               {jobs.map((j) => (
@@ -429,7 +500,7 @@ export default function Home() {
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
                   {j.note && <div className="text-zinc-400 text-sm mt-1">{j.note}</div>}
                   <div className="flex gap-2 mt-3">
-                    <button onClick={() => { setJobCustomerMode("existing"); setJobForm({ id: j.id, customer_id: String(j.customer_id), service_type: j.service_type, amount: String(j.amount), job_date: j.job_date, status: j.status, note: j.note || "" }); }} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
+                    <button onClick={() => openJobModal(j)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
                     <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </div>
                 </div>
@@ -443,7 +514,7 @@ export default function Home() {
                   <td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
                   <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status)}</td>
                   <td className="p-3 whitespace-nowrap">
-                    <button onClick={() => { setJobCustomerMode("existing"); setJobForm({ id: j.id, customer_id: String(j.customer_id), service_type: j.service_type, amount: String(j.amount), job_date: j.job_date, status: j.status, note: j.note || "" }); }} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
+                    <button onClick={() => openJobModal(j)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
                     <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </td>
                 </tr>))}
@@ -512,6 +583,84 @@ export default function Home() {
             </>
           )}
         </div>
+      )}
+
+      {showCustomerModal && (
+        <Modal title={customerForm.id ? "Edit pelanggan" : "Tambah pelanggan"} onClose={() => { setShowCustomerModal(false); setCustomerForm(emptyCustomer); }}>
+          <form onSubmit={submitCustomer} className="space-y-3">
+            <label className="block text-sm font-medium">Nama *
+              <input className="mt-1" required value={customerForm.name} onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })} />
+            </label>
+            <label className="block text-sm font-medium">Alamat
+              <input className="mt-1" value={customerForm.address} onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })} />
+            </label>
+            <label className="block text-sm font-medium">Nomor telepon / WA
+              <input className="mt-1" inputMode="tel" value={customerForm.phone} onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })} />
+            </label>
+            <div className="flex gap-2 flex-wrap pt-1">
+              <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan pelanggan</button>
+              <button type="button" onClick={() => { setShowCustomerModal(false); setCustomerForm(emptyCustomer); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showJobModal && (
+        <Modal title={jobForm.id ? "Edit transaksi" : "Tambah transaksi"} onClose={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }}>
+          <form onSubmit={submitJob} className="space-y-3">
+            {!jobForm.id && (
+              <div className="flex gap-2" role="group" aria-label="Pilih pelanggan">
+                <button type="button" onClick={() => setJobCustomerMode("existing")}
+                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "existing" ? "bg-persona text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan lama</button>
+                <button type="button" onClick={() => setJobCustomerMode("new")}
+                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "new" ? "bg-persona text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan baru</button>
+              </div>
+            )}
+            {jobCustomerMode === "new" && !jobForm.id ? (
+              <>
+                <label className="block text-sm font-medium">Nama pelanggan baru *
+                  <input className="mt-1" required value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })} placeholder="Otomatis tersimpan ke list pelanggan" />
+                </label>
+                <label className="block text-sm font-medium">Alamat pelanggan baru
+                  <input className="mt-1" value={newCustomer.address} onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })} />
+                </label>
+                <label className="block text-sm font-medium">Nomor telepon / WA pelanggan baru
+                  <input className="mt-1" inputMode="tel" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} />
+                </label>
+              </>
+            ) : (
+              <label className="block text-sm font-medium">Pelanggan *
+                <select className="mt-1" required value={jobForm.customer_id} onChange={(e) => setJobForm({ ...jobForm, customer_id: e.target.value })}>
+                  <option value="">-- pilih pelanggan --</option>
+                  {customers.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
+                </select>
+              </label>
+            )}
+            <label className="block text-sm font-medium">Jenis jasa *
+              <input className="mt-1" required placeholder="cth: Sedot WC, Service AC…" value={jobForm.service_type} onChange={(e) => setJobForm({ ...jobForm, service_type: e.target.value })} />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm font-medium">Nominal (Rp) *
+                <input className="mt-1" type="number" min="0" step="1" required value={jobForm.amount} onChange={(e) => setJobForm({ ...jobForm, amount: e.target.value })} />
+              </label>
+              <label className="block text-sm font-medium">Tanggal *
+                <input className="mt-1" type="date" required value={jobForm.job_date} onChange={(e) => setJobForm({ ...jobForm, job_date: e.target.value })} />
+              </label>
+            </div>
+            <label className="block text-sm font-medium">Status
+              <select className="mt-1" value={jobForm.status} onChange={(e) => setJobForm({ ...jobForm, status: e.target.value })}>
+                <option value="lunas">Lunas</option><option value="dp">DP</option><option value="belum">Belum bayar</option>
+              </select>
+            </label>
+            <label className="block text-sm font-medium">Catatan
+              <input className="mt-1" value={jobForm.note} onChange={(e) => setJobForm({ ...jobForm, note: e.target.value })} />
+            </label>
+            <div className="flex gap-2 flex-wrap pt-1">
+              <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan transaksi</button>
+              <button type="button" onClick={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       <nav className="fixed left-1/2 -translate-x-1/2 bottom-4 z-50 flex items-end gap-1 bg-panel border border-line rounded-full px-2 py-2 shadow-2xl shadow-black/60 max-w-[calc(100vw-24px)]" aria-label="Navigasi utama">
