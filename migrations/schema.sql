@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS customers (
   name TEXT NOT NULL,
   address TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL DEFAULT '',
+  next_visit_date TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

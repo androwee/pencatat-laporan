@@ -40,7 +40,7 @@ function Stat({ label, value }) {
   );
 }
 
-const emptyCustomer = { id: "", name: "", address: "", phone: "" };
+const emptyCustomer = { id: "", name: "", address: "", phone: "", next_visit_date: "" };
 const emptyJob = { id: "", customer_id: "", job_date: todayWib(), status: "lunas", note: "", paid_amount: "" };
 const emptyJobItem = { service_type: "", qty: 1, unit: "kubik", unit_price: "" };
 
@@ -156,6 +156,7 @@ export default function Home() {
         customers: cust.customers.length, jobs: allJobs.jobs.length,
         outstanding: outstandingJobs.reduce((s, j) => s + Math.max(0, Number(j.amount) - Number(j.paid_amount || 0)), 0),
         outstandingCount: outstandingJobs.length,
+        schedules: cust.customers.filter((c) => c.next_visit_date).sort((a, b) => (a.next_visit_date < b.next_visit_date ? -1 : 1)),
         recent: allJobs.jobs.slice(0, 10),
         trendDates: trend.dates.slice(-10), trendValues: trend.values.slice(-10),
         status: statusParts({
@@ -438,7 +439,7 @@ export default function Home() {
   };
 
   const openCustomerModal = (customer) => {
-    if (customer) setCustomerForm({ id: customer.id, name: customer.name, address: customer.address, phone: customer.phone });
+    if (customer) setCustomerForm({ id: customer.id, name: customer.name, address: customer.address, phone: customer.phone, next_visit_date: customer.next_visit_date || "" });
     else setCustomerForm(emptyCustomer);
     setShowCustomerModal(true);
   };
@@ -486,11 +487,12 @@ export default function Home() {
       dupConfirmed.current = false;
       await api(id ? `/api/customers/${id}` : "/api/customers", {
         method: id ? "PUT" : "POST",
-        body: JSON.stringify({ name: customerForm.name, address: customerForm.address, phone: customerForm.phone }),
+        body: JSON.stringify({ name: customerForm.name, address: customerForm.address, phone: customerForm.phone, next_visit_date: customerForm.next_visit_date || null }),
       });
       setCustomerForm(emptyCustomer);
       setShowCustomerModal(false);
       loadCustomers(search);
+      loadDashboard();
     } catch (err) { setError(err.message); }
   };
 
@@ -556,6 +558,14 @@ export default function Home() {
     if (!confirm("Hapus pelanggan ini beserta semua transaksinya?")) return;
     await api(`/api/customers/${id}`, { method: "DELETE" });
     loadCustomers(search);
+  };
+
+  const clearSchedule = async (customer) => {
+    if (!window.confirm(`Hapus jadwal kunjungan untuk ${customer.name}?`)) return;
+    try {
+      await api(`/api/customers/${customer.id}`, { method: "PUT", body: JSON.stringify({ name: customer.name, address: customer.address, phone: customer.phone, next_visit_date: "" }) });
+      await Promise.all([loadDashboard(), loadCustomers(search)]);
+    } catch (err) { setError(err.message); }
   };
   const deleteJob = async (id) => {
     if (!confirm("Hapus transaksi ini?")) return;
@@ -908,6 +918,28 @@ export default function Home() {
       .map((g) => ({ ...g, jobs: [...g.jobs].sort((a, b) => (a.job_date < b.job_date ? -1 : 1)) }))
       .sort((a, b) => b.totalRemaining - a.totalRemaining);
   })();
+
+  // Jadwal kunjungan: dikelompokkan dari tanggalnya saja (YYYY-MM-DD
+  // bisa dibandingkan sebagai teks). "7 hari ke depan" = 7 hari setelah
+  // hari ini, di luar itu masuk "Mendatang".
+  const scheduleGroups = (() => {
+    const today = todayWib();
+    const weekEnd = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86400000).toISOString().slice(0, 10);
+    const groups = { overdue: [], today: [], week: [], later: [] };
+    (dash.schedules || []).forEach((c) => {
+      const d = c.next_visit_date;
+      if (d < today) groups.overdue.push(c);
+      else if (d === today) groups.today.push(c);
+      else if (d <= weekEnd) groups.week.push(c);
+      else groups.later.push(c);
+    });
+    return [
+      { key: "overdue", title: "Terlewat", list: groups.overdue },
+      { key: "today", title: "Hari ini", list: groups.today },
+      { key: "week", title: "7 hari ke depan", list: groups.week },
+      { key: "later", title: "Mendatang", list: groups.later },
+    ].filter((g) => g.list.length);
+  })();
   // Pengingat dibuka sebagai chat wa.me dengan pesan sudah jadi — yang
   // menekan Kirim tetap kamu di WhatsApp, tidak terkirim otomatis.
   const sendPiutangReminder = (group) => {
@@ -1036,6 +1068,28 @@ export default function Home() {
               <button onClick={openPiutang} className="bg-persona px-4 py-2 rounded-xl font-bold text-sm">Lihat piutang</button>
             </div>
           )}
+          {(dash.schedules || []).length > 0 && (
+            <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
+              <h3 className="font-bold">Jadwal kunjungan berikutnya</h3>
+              {scheduleGroups.map((g) => (
+                <div key={g.key}>
+                  <div className="text-sm text-zinc-400 mb-1">{g.title}</div>
+                  <div className="space-y-2">
+                    {g.list.map((c) => (
+                      <div key={c.id} className="flex justify-between gap-2 text-sm border border-line rounded-xl p-3">
+                        <div>
+                          <button onClick={() => openHistory(c)} className="font-bold underline-offset-2 hover:underline text-left">{c.name}</button>
+                          <div className="text-zinc-400">{c.next_visit_date}{c.phone ? ` · ${c.phone}` : ""}</div>
+                        </div>
+                        <button onClick={() => clearSchedule(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">Selesai</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-zinc-400">Ketuk nama pelanggan untuk melihat riwayatnya. Atur atau ubah jadwal dari Pelanggan → Edit.</p>
+            </div>
+          )}
           <div className="grid md:grid-cols-2 gap-4">
             <Card title="Tren pemasukan (10 tanggal terakhir)"><BarChart labels={dash.trendDates} values={dash.trendValues} onSelect={(date) => openJobsForDate(date)} /></Card>
             <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} onSelect={(part) => openJobsForStatus(part.label)} /></Card>
@@ -1125,6 +1179,7 @@ export default function Home() {
                   </div>
                   <div className="text-zinc-400 text-sm mt-1">{c.address || "—"}</div>
                   <div className="text-sm mt-1">{c.phone || "—"}</div>
+                  {c.next_visit_date && <div className={`text-sm mt-1 ${c.next_visit_date <= todayWib() ? "text-red-400" : "text-zinc-400"}`}>Jadwal berikutnya: {c.next_visit_date}</div>}
                   <div className="flex gap-2 mt-3">
                     <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Riwayat</button>
                     <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
@@ -1135,11 +1190,11 @@ export default function Home() {
               {!customers.length && <p className="text-zinc-400 text-sm">Belum ada pelanggan.</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={customers.length > 0 && selectedCustomers.length === customers.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3"></th></tr></thead>
+            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={customers.length > 0 && selectedCustomers.length === customers.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3">Jadwal berikutnya</th><th className="p-3"></th></tr></thead>
               <tbody>{customers.map((c) => (
                 <tr key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
                   className={`border-t border-line select-none ${selectedCustomers.includes(c.id) ? "bg-red-500/10" : ""}`}>
-                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td>
+                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td><td className={`p-3 ${c.next_visit_date && c.next_visit_date <= todayWib() ? "text-red-400" : ""}`}>{c.next_visit_date || "—"}</td>
                   <td className="p-3 whitespace-nowrap">
                     <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Riwayat</button>
                     <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
@@ -1368,6 +1423,9 @@ export default function Home() {
             </label>
             <label className="block text-sm font-medium">Nomor telepon / WA
               <input className="mt-1" inputMode="tel" value={customerForm.phone} onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })} />
+            </label>
+            <label className="block text-sm font-medium">Jadwal kunjungan berikutnya (opsional)
+              <input className="mt-1" type="date" value={customerForm.next_visit_date} onChange={(e) => setCustomerForm({ ...customerForm, next_visit_date: e.target.value })} />
             </label>
             <div className="flex gap-2 flex-wrap pt-1">
               <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan pelanggan</button>

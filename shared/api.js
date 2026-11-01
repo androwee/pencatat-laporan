@@ -192,6 +192,12 @@ async function ensurePaidAmountColumn(env) {
   try { await qRun(env, "UPDATE jobs SET paid_amount = amount WHERE status = 'lunas' AND (paid_amount IS NULL OR paid_amount = 0)"); } catch {}
 }
 
+// Jadwal kunjungan berikutnya per pelanggan (kolom di customers, NULL =
+// tidak ada jadwal). Migrasi idempotent seperti paid_amount.
+async function ensureNextVisitColumn(env) {
+  try { await qRun(env, "ALTER TABLE customers ADD COLUMN next_visit_date TEXT"); } catch {}
+}
+
 function validatePaidAmount(paidRaw, amount) {
   const paid = Number(paidRaw ?? 0);
   if (!Number.isSafeInteger(paid) || paid < 0 || paid > amount) return { error: "Sudah dibayar harus angka 0 sampai total." };
@@ -301,6 +307,7 @@ export async function handleApi(request, env) {
 
     // ---- Pelanggan ----
     if (path === "/api/customers" && method === "GET") {
+      await ensureNextVisitColumn(env);
       const q = (url.searchParams.get("q") || "").trim();
       const rows = q
         ? await qAll(env, "SELECT * FROM customers WHERE name LIKE ? OR phone LIKE ? ORDER BY name COLLATE NOCASE ASC LIMIT 200", `%${q}%`, `%${q}%`)
@@ -312,11 +319,14 @@ export async function handleApi(request, env) {
       const body = await readJson(request);
       const name = (body?.name || "").trim();
       if (!name) return json({ error: "Nama pelanggan wajib diisi." }, 400);
+      const nextVisit = body?.next_visit_date ? String(body.next_visit_date).trim() : null;
+      if (nextVisit && !isValidDate(nextVisit)) return json({ error: "Tanggal kunjungan berikutnya tidak valid (YYYY-MM-DD)." }, 400);
+      await ensureNextVisitColumn(env);
       const now = new Date().toISOString();
       const res = await qRun(
         env,
-        "INSERT INTO customers (name, address, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        name, (body.address || "").trim(), (body.phone || "").trim(), now, now,
+        "INSERT INTO customers (name, address, phone, next_visit_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        name, (body.address || "").trim(), (body.phone || "").trim(), nextVisit, now, now,
       );
       const row = await qFirst(env, "SELECT * FROM customers WHERE id = ?", res.meta.last_row_id);
       return json({ customer: row }, 201);
@@ -357,10 +367,18 @@ export async function handleApi(request, env) {
         const body = await readJson(request);
         const name = (body?.name || "").trim();
         if (!name) return json({ error: "Nama pelanggan wajib diisi." }, 400);
-        await qRun(env, "UPDATE customers SET name = ?, address = ?, phone = ?, updated_at = ? WHERE id = ?",
-          name, (body.address || "").trim(), (body.phone || "").trim(), new Date().toISOString(), id);
+        await ensureNextVisitColumn(env);
+        const existing = await qFirst(env, "SELECT * FROM customers WHERE id = ?", id);
+        if (!existing) return json({ error: "Pelanggan tidak ditemukan." }, 404);
+        // Bila kunci next_visit_date tidak dikirim, jadwal lama dipertahankan
+        // (PUT parsial dari pemanggil lain tidak boleh menghapus jadwal).
+        const nextVisit = ("next_visit_date" in (body || {}))
+          ? (body.next_visit_date ? String(body.next_visit_date).trim() : null)
+          : (existing.next_visit_date || null);
+        if (nextVisit && !isValidDate(nextVisit)) return json({ error: "Tanggal kunjungan berikutnya tidak valid (YYYY-MM-DD)." }, 400);
+        await qRun(env, "UPDATE customers SET name = ?, address = ?, phone = ?, next_visit_date = ?, updated_at = ? WHERE id = ?",
+          name, (body.address || "").trim(), (body.phone || "").trim(), nextVisit, new Date().toISOString(), id);
         const row = await qFirst(env, "SELECT * FROM customers WHERE id = ?", id);
-        if (!row) return json({ error: "Pelanggan tidak ditemukan." }, 404);
         return json({ customer: row });
       }
       if (method === "DELETE") {
@@ -541,6 +559,7 @@ export async function handleApi(request, env) {
         custIds.add(c.id);
         if (!isStr(c.name) || !c.name.trim() || c.name.length > 200) return json({ error: "Nama pelanggan di cadangan tidak valid." }, 400);
         if (!isStr(c.address || "") || !isStr(c.phone || "") || (c.address || "").length > 500 || (c.phone || "").length > 50) return json({ error: "Alamat/telepon pelanggan di cadangan tidak valid." }, 400);
+        if (c.next_visit_date && !isValidDate(c.next_visit_date)) return json({ error: "Tanggal kunjungan berikutnya di cadangan tidak valid." }, 400);
       }
       const priceIds = new Set();
       const priceNames = new Set();
@@ -585,7 +604,8 @@ export async function handleApi(request, env) {
         }
       }
       // Validasi lolos semua — baru sekarang ganti data.
-      await qRun(env, "CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+      await qRun(env, "CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', next_visit_date TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+      await ensureNextVisitColumn(env);
       await qRun(env, "CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER NOT NULL REFERENCES customers(id), service_type TEXT NOT NULL, amount INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'lunas', job_date TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
       await ensureServicePricesTable(env);
       await ensureJobItemsTable(env);
@@ -596,7 +616,7 @@ export async function handleApi(request, env) {
       await qRun(env, "DELETE FROM settings");
       const now = new Date().toISOString();
       for (const c of body.customers) {
-        await qRun(env, "INSERT INTO customers (id, name, address, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", c.id, c.name.trim(), (c.address || "").trim(), (c.phone || "").trim(), c.created_at || now, c.updated_at || now);
+        await qRun(env, "INSERT INTO customers (id, name, address, phone, next_visit_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)", c.id, c.name.trim(), (c.address || "").trim(), (c.phone || "").trim(), c.next_visit_date || null, c.created_at || now, c.updated_at || now);
       }
       for (const p of prices) {
         await qRun(env, "INSERT INTO service_prices (id, service_type, unit, unit_price, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", p.id, p.service_type.trim(), p.unit, p.unit_price, p.created_at || now, p.updated_at || now);
