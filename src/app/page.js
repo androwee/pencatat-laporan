@@ -45,7 +45,8 @@ function Stat({ label, value }) {
 }
 
 const emptyCustomer = { id: "", name: "", address: "", phone: "" };
-const emptyJob = { id: "", customer_id: "", service_type: "", amount: "", job_date: todayWib(), status: "lunas", note: "" };
+const emptyJob = { id: "", customer_id: "", job_date: todayWib(), status: "lunas", note: "" };
+const emptyJobItem = { service_type: "", qty: 1, unit: "kubik", unit_price: "" };
 
 function Modal({ title, onClose, children }) {
   return (
@@ -103,6 +104,9 @@ export default function Home() {
   const [customerForm, setCustomerForm] = useState(emptyCustomer);
   const [jobs, setJobs] = useState([]);
   const [jobForm, setJobForm] = useState(emptyJob);
+  const [jobItems, setJobItems] = useState([{ ...emptyJobItem }]);
+  const fmtQty = (q) => { const n = Number(q); if (!Number.isFinite(n)) return q; return Number.isInteger(n) ? String(n) : String(n).replace(".", ","); };
+  const jobItemsTotal = jobItems.reduce((sum, it) => sum + Math.round(Number(it.qty || 0) * Number(it.unit_price || 0)), 0);
   const [jobCustomerMode, setJobCustomerMode] = useState("existing");
   const [newCustomer, setNewCustomer] = useState({ name: "", address: "", phone: "" });
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -270,9 +274,13 @@ export default function Home() {
   const openJobModal = (job) => {
     if (job) {
       setJobCustomerMode("existing");
-      setJobForm({ id: job.id, customer_id: String(job.customer_id), service_type: job.service_type, amount: String(job.amount), job_date: job.job_date, status: job.status, note: job.note || "" });
+      setJobForm({ id: job.id, customer_id: String(job.customer_id), job_date: job.job_date, status: job.status, note: job.note || "" });
+      setJobItems(job.items?.length
+        ? job.items.map((it) => ({ service_type: it.service_type, qty: it.qty, unit: it.unit, unit_price: String(it.unit_price) }))
+        : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: String(job.amount) }]);
     } else {
       setJobForm({ ...emptyJob, job_date: todayWib() });
+      setJobItems([{ ...emptyJobItem }]);
       setJobCustomerMode("existing");
       setNewCustomer({ name: "", address: "", phone: "" });
     }
@@ -316,14 +324,20 @@ export default function Home() {
         });
         customerId = created.customer.id;
       }
+      const items = jobItems.map((it) => ({
+        service_type: it.service_type.trim(), qty: Number(it.qty), unit: it.unit, unit_price: Number(it.unit_price),
+      }));
+      if (!items.length || items.some((it) => !it.service_type || !(it.qty > 0) || !(it.unit_price >= 0))) {
+        throw new Error("Isi tiap baris layanan: jenis jasa, jumlah > 0, dan harga satuan.");
+      }
       await api(id ? `/api/jobs/${id}` : "/api/jobs", {
         method: id ? "PUT" : "POST",
         body: JSON.stringify({
-          customer_id: customerId, service_type: jobForm.service_type,
-          amount: Number(jobForm.amount), job_date: jobForm.job_date, status: jobForm.status, note: jobForm.note,
+          customer_id: customerId, items, job_date: jobForm.job_date, status: jobForm.status, note: jobForm.note,
         }),
       });
       setJobForm({ ...emptyJob, job_date: todayWib() });
+      setJobItems([{ ...emptyJobItem }]);
       setJobCustomerMode("existing");
       setNewCustomer({ name: "", address: "", phone: "" });
       setShowJobModal(false);
@@ -426,11 +440,21 @@ export default function Home() {
       if (customer.address) { doc.splitTextToSize(customer.address, 182).forEach((line) => { doc.text(line, 14, y); y += 6; }); }
       y += 4;
       doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.4); doc.line(14, y, 196, y); y += 8;
-      doc.setFont("helvetica", "bold"); doc.text("Jenis jasa", 14, y); doc.text("Nominal", 196, y, { align: "right" }); y += 7;
+      const invItems = job.items?.length
+        ? job.items
+        : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: job.amount, amount: job.amount }];
+      doc.setFont("helvetica", "bold");
+      doc.text("Layanan", 14, y); doc.text("Jumlah", 108, y); doc.text("Harga satuan", 138, y); doc.text("Subtotal", 196, y, { align: "right" }); y += 7;
       doc.line(14, y, 196, y); y += 8;
       doc.setFont("helvetica", "normal");
-      doc.splitTextToSize(job.service_type, 120).forEach((line) => { doc.text(line, 14, y); y += 6; });
-      doc.text(fmtRp(job.amount), 196, y - 6, { align: "right" });
+      invItems.forEach((it) => {
+        const lines = doc.splitTextToSize(it.service_type, 84);
+        doc.text(`${fmtQty(it.qty)} ${it.unit || ""}`.trim(), 108, y);
+        doc.text(fmtRp(it.unit_price), 138, y);
+        doc.text(fmtRp(it.amount), 196, y, { align: "right" });
+        lines.forEach((line) => { doc.text(line, 14, y); y += 6; });
+        y += 2;
+      });
       if (job.note) { y += 2; doc.setFontSize(10); doc.text(`Catatan: ${job.note}`, 14, y); doc.setFontSize(11); y += 6; }
       y += 4; doc.line(14, y, 196, y); y += 9;
       doc.setFont("helvetica", "bold"); doc.setFontSize(13);
@@ -793,7 +817,7 @@ export default function Home() {
       )}
 
       {showJobModal && (
-        <Modal title={jobForm.id ? "Edit transaksi" : "Tambah transaksi"} onClose={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }}>
+        <Modal title={jobForm.id ? "Edit transaksi" : "Tambah transaksi"} onClose={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobItems([{ ...emptyJobItem }]); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }}>
           <form onSubmit={submitJob} className="space-y-3">
             {!jobForm.id && (
               <div className="flex gap-2" role="group" aria-label="Pilih pelanggan">
@@ -823,17 +847,51 @@ export default function Home() {
                 </select>
               </label>
             )}
-            <label className="block text-sm font-medium">Jenis jasa *
-              <input className="mt-1" required placeholder="cth: Sedot WC, Service AC…" value={jobForm.service_type} onChange={(e) => setJobForm({ ...jobForm, service_type: e.target.value })} />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm font-medium">Nominal (Rp) *
-                <input className="mt-1" type="number" min="0" step="1" required value={jobForm.amount} onChange={(e) => setJobForm({ ...jobForm, amount: e.target.value })} />
-              </label>
-              <label className="block text-sm font-medium">Tanggal *
-                <input className="mt-1" type="date" required value={jobForm.job_date} onChange={(e) => setJobForm({ ...jobForm, job_date: e.target.value })} />
-              </label>
+            <div>
+              <datalist id="jasa-list">
+                <option value="Sedot WC" /><option value="Perbaikan Wastafel" /><option value="Sedot Limbah" /><option value="Pembersihan Saluran" /><option value="Lain-lain" />
+              </datalist>
+              <p className="text-sm font-medium mb-2">Layanan * <span className="text-zinc-400 font-normal">— satu transaksi bisa berisi beberapa layanan, tiap baris dihitung dari jumlah × harga satuan</span></p>
+              <div className="space-y-3">
+                {jobItems.map((it, idx) => (
+                  <div key={idx} className="border border-line rounded-xl p-3 space-y-2">
+                    <label className="block text-sm font-medium">Jenis jasa *
+                      <input className="mt-1" required list="jasa-list" placeholder="cth: Sedot WC, Perbaikan Wastafel, Lain-lain" value={it.service_type}
+                        onChange={(e) => setJobItems(jobItems.map((x, i) => i === idx ? { ...x, service_type: e.target.value } : x))} />
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <label className="block text-sm font-medium">Jumlah *
+                        <input className="mt-1" type="number" min="0" step="any" required value={it.qty}
+                          onChange={(e) => setJobItems(jobItems.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))} />
+                      </label>
+                      <label className="block text-sm font-medium">Satuan *
+                        <select className="mt-1" value={it.unit}
+                          onChange={(e) => setJobItems(jobItems.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x))}>
+                          <option value="kubik">kubik</option><option value="strip">strip</option><option value="pcs">pcs</option><option value="paket">paket</option>
+                        </select>
+                      </label>
+                      <label className="block text-sm font-medium">Harga satuan (Rp) *
+                        <input className="mt-1" type="number" min="0" step="1" required value={it.unit_price}
+                          onChange={(e) => setJobItems(jobItems.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x))} />
+                      </label>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-zinc-400">Subtotal: <strong className="text-white">{fmtRp(Math.round(Number(it.qty || 0) * Number(it.unit_price || 0)))}</strong></span>
+                      {jobItems.length > 1 && (
+                        <button type="button" onClick={() => setJobItems(jobItems.filter((_, i) => i !== idx))} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus baris</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-3">
+                <button type="button" onClick={() => setJobItems([...jobItems, { ...emptyJobItem }])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">+ Tambah layanan</button>
+                <span className="font-bold">Total: {fmtRp(jobItemsTotal)}</span>
+              </div>
             </div>
+            <label className="block text-sm font-medium">Tanggal *
+              <input className="mt-1" type="date" required value={jobForm.job_date} onChange={(e) => setJobForm({ ...jobForm, job_date: e.target.value })} />
+            </label>
             <label className="block text-sm font-medium">Status
               <select className="mt-1" value={jobForm.status} onChange={(e) => setJobForm({ ...jobForm, status: e.target.value })}>
                 <option value="lunas">Lunas</option><option value="dp">DP</option><option value="belum">Belum bayar</option>
@@ -844,7 +902,7 @@ export default function Home() {
             </label>
             <div className="flex gap-2 flex-wrap pt-1">
               <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan transaksi</button>
-              <button type="button" onClick={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
+              <button type="button" onClick={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobItems([{ ...emptyJobItem }]); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
             </div>
           </form>
         </Modal>
@@ -911,8 +969,18 @@ export default function Home() {
             {customers.find((c) => c.id === Number(detailJob.customer_id))?.address && (
               <div className="flex justify-between gap-3"><span className="text-zinc-400">Alamat</span><strong className="text-right">{customers.find((c) => c.id === Number(detailJob.customer_id)).address}</strong></div>
             )}
-            <div className="flex justify-between gap-3"><span className="text-zinc-400">Jenis jasa</span><strong className="text-right">{detailJob.service_type}</strong></div>
-            <div className="flex justify-between gap-3"><span className="text-zinc-400">Nominal</span><strong>{fmtRp(detailJob.amount)}</strong></div>
+            <div>
+              <p className="text-zinc-400 mb-1">Layanan</p>
+              <div className="border border-line rounded-xl overflow-hidden">
+                {(detailJob.items || [{ service_type: detailJob.service_type, qty: 1, unit: "paket", unit_price: detailJob.amount, amount: detailJob.amount }]).map((it, i) => (
+                  <div key={i} className="flex justify-between gap-3 px-3 py-2 border-t border-line first:border-t-0">
+                    <span><strong>{it.service_type}</strong><span className="text-zinc-400"> · {fmtQty(it.qty)} {it.unit}</span></span>
+                    <span className="text-right"><span className="text-zinc-400 block text-xs">{fmtRp(it.unit_price)} / {it.unit || "paket"}</span><strong>{fmtRp(it.amount)}</strong></span>
+                  </div>
+                ))}
+                <div className="flex justify-between gap-3 px-3 py-2 border-t border-line bg-zinc-800/50"><strong>Total</strong><strong>{fmtRp(detailJob.amount)}</strong></div>
+              </div>
+            </div>
             <div className="flex justify-between gap-3"><span className="text-zinc-400">Status</span>{statusPill(detailJob.status)}</div>
             {detailJob.note && <div className="flex justify-between gap-3"><span className="text-zinc-400">Catatan</span><strong className="text-right">{detailJob.note}</strong></div>}
           </div>

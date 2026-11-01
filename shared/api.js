@@ -154,6 +154,61 @@ async function qRun(env, sql, ...params) {
   }
 }
 
+const ITEM_UNITS = ["kubik", "strip", "pcs", "paket", ""];
+
+function validateItems(body) {
+  const raw = body?.items;
+  if (!Array.isArray(raw) || !raw.length || raw.length > 20) return { error: "Minimal 1 baris layanan, maksimal 20." };
+  const items = [];
+  for (const it of raw) {
+    const service_type = (it?.service_type || "").trim();
+    const qty = Number(it?.qty);
+    const unit = (it?.unit || "").trim();
+    const unit_price = Number(it?.unit_price);
+    if (!service_type || service_type.length > 100) return { error: "Jenis jasa tiap baris wajib diisi." };
+    if (!Number.isFinite(qty) || qty <= 0 || qty > 100000) return { error: "Kubikasi/jumlah tiap baris harus lebih dari 0." };
+    if (!ITEM_UNITS.includes(unit)) return { error: "Satuan tidak valid (kubik/strip/pcs/paket)." };
+    if (!Number.isSafeInteger(unit_price) || unit_price < 0) return { error: "Harga satuan harus angka >= 0." };
+    items.push({ service_type, qty, unit, unit_price, amount: Math.round(qty * unit_price) });
+  }
+  return { items, total: items.reduce((sum, i) => sum + i.amount, 0) };
+}
+
+function itemsSummary(items) {
+  return items.length === 1 ? items[0].service_type : `${items[0].service_type} + ${items.length - 1} layanan lain`;
+}
+
+async function ensureJobItemsTable(env) {
+  await qRun(env, "CREATE TABLE IF NOT EXISTS job_items (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL REFERENCES jobs(id), service_type TEXT NOT NULL, qty REAL NOT NULL DEFAULT 1, unit TEXT NOT NULL DEFAULT '', unit_price INTEGER NOT NULL DEFAULT 0, amount INTEGER NOT NULL DEFAULT 0)");
+  await qRun(env, "CREATE INDEX IF NOT EXISTS idx_job_items_job ON job_items(job_id)");
+}
+
+async function saveJobItems(env, jobId, items) {
+  await ensureJobItemsTable(env);
+  await qRun(env, "DELETE FROM job_items WHERE job_id = ?", jobId);
+  for (const it of items) {
+    await qRun(env, "INSERT INTO job_items (job_id, service_type, qty, unit, unit_price, amount) VALUES (?, ?, ?, ?, ?, ?)",
+      jobId, it.service_type, it.qty, it.unit, it.unit_price, it.amount);
+  }
+}
+
+// Lampirkan items ke tiap job; job lama tanpa baris item disintesis jadi 1 baris (1 paket x nominal).
+async function attachJobItems(env, jobs) {
+  if (!jobs.length) return jobs;
+  await ensureJobItemsTable(env);
+  const ids = jobs.map((j) => j.id);
+  const ph = ids.map(() => "?").join(",");
+  const rows = await qAll(env, `SELECT * FROM job_items WHERE job_id IN (${ph}) ORDER BY id ASC`, ...ids);
+  const byJob = {};
+  rows.forEach((r) => { (byJob[r.job_id] = byJob[r.job_id] || []).push(r); });
+  return jobs.map((j) => ({
+    ...j,
+    items: byJob[j.id]?.length
+      ? byJob[j.id].map((r) => ({ id: r.id, service_type: r.service_type, qty: r.qty, unit: r.unit, unit_price: r.unit_price, amount: r.amount }))
+      : [{ service_type: j.service_type, qty: 1, unit: "paket", unit_price: j.amount, amount: j.amount }],
+  }));
+}
+
 export async function handleApi(request, env) {
   try {
     if (!env.DB) {
@@ -255,6 +310,8 @@ export async function handleApi(request, env) {
       // Hitung dulu (bukan meta.changes, yang di runtime D1 tidak selalu terisi untuk DELETE).
       const nJobs = (await qFirst(env, `SELECT COUNT(*) AS n FROM jobs WHERE customer_id IN (${ph})`, ...ids))?.n || 0;
       const nCust = (await qFirst(env, `SELECT COUNT(*) AS n FROM customers WHERE id IN (${ph})`, ...ids))?.n || 0;
+      await ensureJobItemsTable(env);
+      await qRun(env, `DELETE FROM job_items WHERE job_id IN (SELECT id FROM jobs WHERE customer_id IN (${ph}))`, ...ids);
       await qRun(env, `DELETE FROM jobs WHERE customer_id IN (${ph})`, ...ids);
       await qRun(env, `DELETE FROM customers WHERE id IN (${ph})`, ...ids);
       return json({ ok: true, deleted_customers: nCust, deleted_jobs: nJobs });
@@ -266,6 +323,8 @@ export async function handleApi(request, env) {
       if (!ids.length || ids.length > 200) return json({ error: "Pilih 1–200 transaksi." }, 400);
       const ph = ids.map(() => "?").join(",");
       const n = (await qFirst(env, `SELECT COUNT(*) AS n FROM jobs WHERE id IN (${ph})`, ...ids))?.n || 0;
+      await ensureJobItemsTable(env);
+      await qRun(env, `DELETE FROM job_items WHERE job_id IN (${ph})`, ...ids);
       await qRun(env, `DELETE FROM jobs WHERE id IN (${ph})`, ...ids);
       return json({ ok: true, deleted_jobs: n });
     }
@@ -304,19 +363,28 @@ export async function handleApi(request, env) {
       if (customerId) { sql += " AND j.customer_id = ?"; params.push(Number(customerId)); }
       if (STATUSES.includes(status)) { sql += " AND j.status = ?"; params.push(status); }
       sql += " ORDER BY j.job_date DESC, j.id DESC LIMIT 1000";
-      return json({ jobs: await qAll(env, sql, ...params) });
+      const jobs = await qAll(env, sql, ...params);
+      return json({ jobs: await attachJobItems(env, jobs) });
     }
 
     if (path === "/api/jobs" && method === "POST") {
       const body = await readJson(request);
       const customerId = Number(body?.customer_id);
-      const serviceType = (body?.service_type || "").trim();
-      const amount = Number(body?.amount);
       const jobDate = body?.job_date || todayId();
       const status = body?.status || "lunas";
+      let items, serviceType, amount;
+      if (Array.isArray(body?.items)) {
+        const v = validateItems(body);
+        if (v.error) return json({ error: v.error }, 400);
+        items = v.items; serviceType = itemsSummary(items); amount = v.total;
+      } else {
+        serviceType = (body?.service_type || "").trim();
+        amount = Number(body?.amount);
+        if (!serviceType) return json({ error: "Jenis jasa wajib diisi." }, 400);
+        if (!Number.isSafeInteger(amount) || amount < 0) return json({ error: "Nominal harus angka >= 0." }, 400);
+        items = [{ service_type: serviceType, qty: 1, unit: "paket", unit_price: amount, amount }];
+      }
       if (!customerId) return json({ error: "Pilih pelanggan dulu." }, 400);
-      if (!serviceType) return json({ error: "Jenis jasa wajib diisi." }, 400);
-      if (!Number.isSafeInteger(amount) || amount < 0) return json({ error: "Nominal harus angka >= 0." }, 400);
       if (!isValidDate(jobDate)) return json({ error: "Tanggal tidak valid (YYYY-MM-DD)." }, 400);
       if (!STATUSES.includes(status)) return json({ error: "Status tidak valid." }, 400);
       const customer = await qFirst(env, "SELECT id FROM customers WHERE id = ?", customerId);
@@ -325,8 +393,9 @@ export async function handleApi(request, env) {
       const res = await qRun(env,
         "INSERT INTO jobs (customer_id, service_type, amount, status, job_date, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         customerId, serviceType, amount, status, jobDate, (body.note || "").trim(), now, now);
+      await saveJobItems(env, res.meta.last_row_id, items);
       const row = await qFirst(env, "SELECT * FROM jobs WHERE id = ?", res.meta.last_row_id);
-      return json({ job: row }, 201);
+      return json({ job: { ...row, items } }, 201);
     }
 
     const jobIdMatch = path.match(/^\/api\/jobs\/(\d+)$/);
@@ -334,20 +403,34 @@ export async function handleApi(request, env) {
       const id = Number(jobIdMatch[1]);
       if (method === "PUT") {
         const body = await readJson(request);
-        const serviceType = (body?.service_type || "").trim();
-        const amount = Number(body?.amount);
         const jobDate = body?.job_date || "";
         const status = body?.status || "";
-        if (!serviceType || !Number.isSafeInteger(amount) || amount < 0 || !isValidDate(jobDate) || !STATUSES.includes(status)) {
+        let items, serviceType, amount;
+        if (Array.isArray(body?.items)) {
+          const v = validateItems(body);
+          if (v.error) return json({ error: v.error }, 400);
+          items = v.items; serviceType = itemsSummary(items); amount = v.total;
+        } else {
+          serviceType = (body?.service_type || "").trim();
+          amount = Number(body?.amount);
+          if (!serviceType || !Number.isSafeInteger(amount) || amount < 0) {
+            return json({ error: "Data transaksi tidak valid." }, 400);
+          }
+          items = [{ service_type: serviceType, qty: 1, unit: "paket", unit_price: amount, amount }];
+        }
+        if (!isValidDate(jobDate) || !STATUSES.includes(status)) {
           return json({ error: "Data transaksi tidak valid." }, 400);
         }
         await qRun(env, "UPDATE jobs SET service_type = ?, amount = ?, status = ?, job_date = ?, note = ?, updated_at = ? WHERE id = ?",
           serviceType, amount, status, jobDate, (body.note || "").trim(), new Date().toISOString(), id);
         const row = await qFirst(env, "SELECT * FROM jobs WHERE id = ?", id);
         if (!row) return json({ error: "Transaksi tidak ditemukan." }, 404);
-        return json({ job: row });
+        await saveJobItems(env, id, items);
+        return json({ job: { ...row, items } });
       }
       if (method === "DELETE") {
+        await ensureJobItemsTable(env);
+        await qRun(env, "DELETE FROM job_items WHERE job_id = ?", id);
         await qRun(env, "DELETE FROM jobs WHERE id = ?", id);
         return json({ ok: true });
       }
@@ -376,12 +459,17 @@ export async function handleApi(request, env) {
                 COALESCE(SUM(CASE WHEN status = 'dp' THEN amount ELSE 0 END), 0) AS total_dp,
                 COALESCE(SUM(CASE WHEN status = 'belum' THEN amount ELSE 0 END), 0) AS total_belum
          FROM jobs WHERE job_date BETWEEN ? AND ?`, from, to);
-      const byService = await qAll(env,
-        `SELECT service_type, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total
-         FROM jobs WHERE job_date BETWEEN ? AND ? GROUP BY service_type ORDER BY total DESC`, from, to);
-      const jobs = await qAll(env,
+      const jobsRaw = await qAll(env,
         `SELECT j.*, c.name AS customer_name FROM jobs j JOIN customers c ON c.id = j.customer_id
          WHERE j.job_date BETWEEN ? AND ? ORDER BY j.job_date DESC, j.id DESC`, from, to);
+      const jobs = await attachJobItems(env, jobsRaw);
+      const byMap = {};
+      jobs.forEach((j) => j.items.forEach((it) => {
+        byMap[it.service_type] = byMap[it.service_type] || { service_type: it.service_type, count: 0, total: 0 };
+        byMap[it.service_type].count += 1;
+        byMap[it.service_type].total += it.amount;
+      }));
+      const byService = Object.values(byMap).sort((a, b) => b.total - a.total);
       return json({ from, to, totals, by_service: byService, jobs });
     }
 
@@ -390,13 +478,15 @@ export async function handleApi(request, env) {
       const from = url.searchParams.get("from") || "";
       const to = url.searchParams.get("to") || "";
       if (!isValidDate(from) || !isValidDate(to)) return json({ error: "Rentang from/to tidak valid." }, 400);
-      const jobs = await qAll(env,
-        `SELECT j.job_date, c.name AS customer_name, c.phone, j.service_type, j.amount, j.status, j.note
-         FROM jobs j JOIN customers c ON c.id = j.customer_id
+      const jobsRaw = await qAll(env,
+        `SELECT j.*, c.name AS customer_name, c.phone FROM jobs j JOIN customers c ON c.id = j.customer_id
          WHERE j.job_date BETWEEN ? AND ? ORDER BY j.job_date ASC, j.id ASC`, from, to);
-      const lines = ["tanggal,nama_pelanggan,telepon_wa,jenis_jasa,nominal_rp,status,catatan"];
+      const jobs = await attachJobItems(env, jobsRaw);
+      const lines = ["tanggal,nama_pelanggan,telepon_wa,jenis_jasa,jumlah,satuan,harga_satuan_rp,subtotal_rp,status,catatan"];
       for (const j of jobs) {
-        lines.push([j.job_date, j.customer_name, j.phone, j.service_type, j.amount, j.status, j.note].map(csvEscape).join(","));
+        for (const it of j.items) {
+          lines.push([j.job_date, j.customer_name, j.phone, it.service_type, it.qty, it.unit, it.unit_price, it.amount, j.status, j.note].map(csvEscape).join(","));
+        }
       }
       return new Response(lines.join("\n"), {
         headers: {
