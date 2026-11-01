@@ -1,8 +1,12 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Pencatat Pelanggan Jasa",
+  title: "Pencatat Laporan",
   description: "Pencatat pelanggan jasa dan laporan pemasukan harian sampai bulanan.",
+  manifest: "/manifest.json",
+  themeColor: "#e60012",
+  appleWebApp: { capable: true, title: "Pencatat Laporan", statusBarStyle: "black-translucent" },
+  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
 };
 
 export default function RootLayout({ children }) {
@@ -12,6 +16,11 @@ export default function RootLayout({ children }) {
         <script
           dangerouslySetInnerHTML={{
             __html: `try{ if (localStorage.getItem('pencatat-theme') === 'light') document.documentElement.classList.add('theme-light'); }catch(e){}`,
+          }}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', function(){ navigator.serviceWorker.register('/sw.js').catch(function(){}); }); }`,
           }}
         />
         {children}

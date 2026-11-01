@@ -15,14 +15,10 @@ async function api(path, options = {}) {
   return data;
 }
 
-function LogoMark({ size = 44 }) {
+function AppLogo({ size = 44, theme = "dark" }) {
   return (
-    <span className="inline-flex leading-none" aria-hidden="true">
-      <svg viewBox="0 0 48 48" width={size} height={size} fill="none" aria-hidden="true">
-        <rect x="2" y="2" width="44" height="44" rx="10" fill="#e60012" />
-        <path d="M14 32v-8M22 32V14M30 32v-12M38 32H10" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </span>
+    <img src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"} alt="Logo Pencatat Laporan"
+      width={size} height={size} className="rounded-xl shrink-0" style={{ width: size, height: size }} />
   );
 }
 
@@ -119,6 +115,8 @@ export default function Home() {
   const [settings, setSettings] = useState({});
   const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "" });
   const [settingsSaved, setSettingsSaved] = useState("");
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
   const [jobFilterType, setJobFilterType] = useState("all");
   const [jobFilterWeek, setJobFilterWeek] = useState(isoWeek(todayWib()));
   const [jobFilterMonth, setJobFilterMonth] = useState(todayWib().slice(0, 7));
@@ -246,6 +244,30 @@ export default function Home() {
       }
     } catch {}
   }, []);
+
+  useEffect(() => {
+    const checkInstalled = () => setIsInstalled(
+      (typeof window !== "undefined" && window.matchMedia("(display-mode: standalone)").matches) ||
+      (typeof window !== "undefined" && window.navigator.standalone === true));
+    checkInstalled();
+    const onBeforeInstall = (e) => { e.preventDefault(); setInstallPrompt(e); };
+    const onInstalled = () => { setIsInstalled(true); setInstallPrompt(null); };
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  const installApp = async () => {
+    if (!installPrompt) return;
+    try {
+      await installPrompt.prompt();
+      await installPrompt.userChoice;
+    } catch {}
+    setInstallPrompt(null);
+  };
 
   const applyTheme = (next) => {
     setTheme(next);
@@ -451,6 +473,31 @@ export default function Home() {
     } catch (err) { setError(err.message); }
   };
 
+  const toWaNumber = (raw) => {
+    let d = String(raw || "").replace(/\D/g, "");
+    if (d.startsWith("0")) d = "62" + d.slice(1);
+    else if (d.startsWith("8")) d = "62" + d;
+    return d;
+  };
+
+  const sendInvoiceWhatsApp = (job) => {
+    const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
+    const phone = toWaNumber(customer.phone || job.customer_phone);
+    if (!/^62\d{8,13}$/.test(phone)) {
+      setError("Nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan.");
+      return;
+    }
+    const businessName = settings.business_name || "Pencatat Laporan";
+    const invNo = `INV-${String(job.job_date).replaceAll("-", "")}-${String(job.id).padStart(4, "0")}`;
+    const statusLabel = job.status === "lunas" ? "Lunas" : job.status === "dp" ? "DP" : "Belum bayar";
+    const items = job.items?.length
+      ? job.items
+      : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: job.amount, amount: job.amount }];
+    const lines = items.map((it) => `- ${it.service_type} (${fmtQty(it.qty)} ${it.unit}) @ ${fmtRp(it.unit_price)} = ${fmtRp(it.amount)}`).join("\n");
+    const msg = `${businessName}\nINVOICE ${invNo}\nTanggal: ${job.job_date}\nPelanggan: ${job.customer_name}\n\n${lines}\n\nTotal: ${fmtRp(job.amount)}\nStatus: ${statusLabel}\n\nTerima kasih.`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+  };
+
   const downloadInvoice = async (job) => {
     try {
       const { jsPDF } = await import("jspdf");
@@ -531,8 +578,8 @@ export default function Home() {
     return (
       <main className="max-w-md mx-auto px-4 pt-16 pb-24">
         <div className="flex flex-col items-center text-center gap-2">
-          <LogoMark size={72} />
-          <h1 className="p5-title text-3xl">Pencatat Laporan</h1>
+          <AppLogo size={80} theme={theme} />
+          <h1 className="font-semibold tracking-tight text-3xl">Pencatat Laporan</h1>
           <p className="text-zinc-400">Pencatat Pelanggan Jasa</p>
         </div>
         <div className="bg-panel border border-line rounded-2xl p-5 mt-6 relative overflow-hidden">
@@ -570,20 +617,20 @@ export default function Home() {
   return (
     <main className="max-w-5xl mx-auto px-4 pt-4 pb-32">
       <div className="p5-dots h-2 opacity-40 rounded-full mb-4" aria-hidden="true" />
-      <header className="flex justify-between items-start gap-3">
+      <header className="flex justify-between items-center gap-3">
         <div className="flex items-center gap-3">
-          <LogoMark size={40} />
-          <div>
-            <h1 className="p5-title text-xl sm:text-2xl leading-none">Pencatat Laporan</h1>
-            <p className="text-zinc-400 text-sm mt-1">Login sebagai {username}</p>
-          </div>
+          <AppLogo size={44} theme={theme} />
+          <h1 className="font-semibold tracking-tight text-xl sm:text-2xl leading-tight">Pencatat Laporan</h1>
         </div>
-        <button onClick={openSettings} aria-label="Pengaturan"
-          className="bg-zinc-800 hover:bg-zinc-700 w-11 h-11 rounded-full flex items-center justify-center shrink-0">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+        <button onClick={openSettings} aria-label="Profil dan pengaturan"
+          className="w-11 h-11 rounded-full overflow-hidden shrink-0 border border-line bg-panel flex items-center justify-center">
+          {settings.business_logo ? (
+            <img src={settings.business_logo} alt="Logo perusahaan" className="w-full h-full object-cover" />
+          ) : (
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-zinc-400">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
+          )}
         </button>
       </header>
 
@@ -962,7 +1009,7 @@ export default function Home() {
       )}
 
       {showSettingsModal && (
-        <Modal title="Pengaturan" onClose={() => setShowSettingsModal(false)}>
+        <Modal title="Profil & Pengaturan" onClose={() => setShowSettingsModal(false)}>
           <div className="space-y-5">
             <div>
               <h3 className="font-bold mb-2">Tampilan</h3>
@@ -1019,6 +1066,19 @@ export default function Home() {
               </div>
             </form>
             <div className="border-t border-line pt-4">
+              <h3 className="font-bold mb-1">Aplikasi</h3>
+              {isInstalled ? (
+                <p className="text-sm text-zinc-400">Aplikasi sudah terinstall di perangkat ini, bisa dibuka dari layar utama tanpa browser.</p>
+              ) : installPrompt ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <button onClick={installApp} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold text-sm">Install aplikasi</button>
+                  <span className="text-sm text-zinc-400">Pasang sebagai aplikasi di layar utama.</span>
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-400">Bila tombol install belum muncul: di Chrome Android ketuk ⋮ lalu "Tambahkan ke Layar Utama" atau "Install aplikasi". Di iPhone: ketuk Bagikan lalu "Tambah ke Layar Utama".</p>
+              )}
+            </div>
+            <div className="border-t border-line pt-4">
               <h3 className="font-bold mb-1">Akun</h3>
               <p className="text-sm text-zinc-400 mb-3">Login sebagai {username}</p>
               <button onClick={handleLogout} className="w-full bg-persona hover:bg-persona-dark px-5 py-3 rounded-xl font-bold">Keluar</button>
@@ -1055,9 +1115,11 @@ export default function Home() {
           </div>
           <div className="flex gap-2 flex-wrap mt-5">
             <button onClick={() => downloadInvoice(detailJob)} className="bg-persona hover:bg-persona-dark px-5 py-3 rounded-xl font-bold flex-1">Unduh Invoice (PDF)</button>
+            <button onClick={() => sendInvoiceWhatsApp(detailJob)} className="bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-white flex-1">Kirim via WhatsApp</button>
             <button onClick={() => { const j = detailJob; setDetailJob(null); openJobModal(j); }} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold">Edit</button>
             <button onClick={() => setDetailJob(null)} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold">Tutup</button>
           </div>
+          <p className="text-xs text-zinc-400 mt-3">Kirim via WhatsApp membuka chat dengan nomor WA pelanggan dan pesan invoice sudah terisi. File PDF tidak ikut terlampir otomatis — unduh dulu, lalu lampirkan di chat WhatsApp bila perlu.</p>
           <p className="text-xs text-zinc-400 mt-3">Header invoice memakai informasi usaha dari Pengaturan (ikon roda gigi di atas). Isi dulu di sana bila nama/alamat/telepon/website usaha belum tampil di invoice.</p>
         </Modal>
       )}
