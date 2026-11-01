@@ -8,7 +8,7 @@ const STATUS_META = {
   belum: { label: "Belum bayar", color: "#e60012" },
 };
 
-export function BarChart({ labels, values }) {
+export function BarChart({ labels, values, onSelect }) {
   const max = Math.max(0, ...values);
   if (!values.length || !max) return <p className="text-sm text-zinc-400">Belum ada data pada periode ini.</p>;
   const W = 600, H = 220, padB = 34, padT = 30;
@@ -20,7 +20,9 @@ export function BarChart({ labels, values }) {
         const x = 8 + i * (bw + 6);
         const y = padT + (H - padT - padB) - bh;
         return (
-          <g key={i}>
+          <g key={i} onClick={onSelect ? () => onSelect(labels[i], v) : undefined}
+            style={onSelect ? { cursor: "pointer" } : undefined}>
+            <title>{`${labels[i]}: ${fmtRp(v)}`}</title>
             <rect x={x} y={y} width={bw} height={bh} fill="#e60012" />
             {bw >= 28 && <text x={x + bw / 2} y={y - 6} textAnchor="middle" fontSize="11" fontWeight="700" fill="#e60012">{fmtRp(v)}</text>}
             <text x={x + bw / 2} y={H - 8} textAnchor="middle" fontSize="11" fill="#667085">{labels[i].slice(5)}</text>
@@ -31,7 +33,7 @@ export function BarChart({ labels, values }) {
   );
 }
 
-export function DonutChart({ parts }) {
+export function DonutChart({ parts, onSelect }) {
   const total = parts.reduce((s, p) => s + p.value, 0);
   if (!total) return <p className="text-sm text-zinc-400">Belum ada data pada periode ini.</p>;
   const R = 70, C = 2 * Math.PI * R;
@@ -45,7 +47,11 @@ export function DonutChart({ parts }) {
             const len = (p.value / total) * C;
             const el = (
               <circle key={p.label} cx="100" cy="100" r={R} fill="none" stroke={p.color} strokeWidth="26"
-                strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset} />
+                strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset}
+                onClick={onSelect && p.value ? () => onSelect(p) : undefined}
+                style={onSelect && p.value ? { cursor: "pointer" } : undefined}>
+                <title>{`${p.label}: ${fmtRp(p.value)}`}</title>
+              </circle>
             );
             offset += len;
             return el;
@@ -57,12 +63,14 @@ export function DonutChart({ parts }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-3 justify-center text-sm">
-        {parts.map((p) => (
-          <span key={p.label} className="inline-flex items-center gap-2">
-            <i className="w-3 h-3 rounded-sm inline-block" style={{ background: p.color }} />
-            {p.label}: {fmtRp(p.value)}
-          </span>
-        ))}
+        {parts.map((p) => {
+          const inner = (<><i className="w-3 h-3 rounded-sm inline-block" style={{ background: p.color }} />{p.label}: {fmtRp(p.value)}</>);
+          return onSelect && p.value ? (
+            <button key={p.label} type="button" onClick={() => onSelect(p)} className="inline-flex items-center gap-2 cursor-pointer">{inner}</button>
+          ) : (
+            <span key={p.label} className="inline-flex items-center gap-2">{inner}</span>
+          );
+        })}
       </div>
     </div>
   );

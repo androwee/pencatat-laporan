@@ -400,12 +400,15 @@ export default function Home() {
   // memicu tahan lama, supaya Detail/Edit/Hapus tetap berfungsi normal.
   const lpTimer = useRef(null);
   const lpStart = useRef(null);
+  const lpFired = useRef(false);
   const lpClear = () => { if (lpTimer.current) clearTimeout(lpTimer.current); lpTimer.current = null; lpStart.current = null; };
   const lpProps = (toggle) => ({
     onPointerDown: (e) => {
       if (e.target.closest("button, a, input, select, textarea, label")) return;
+      lpFired.current = false;
       lpStart.current = { x: e.clientX, y: e.clientY };
       lpTimer.current = setTimeout(() => {
+        lpFired.current = true;
         try { navigator.vibrate?.(15); } catch {}
         toggle();
         lpClear();
@@ -419,12 +422,38 @@ export default function Home() {
     onPointerCancel: lpClear,
     onContextMenu: (e) => e.preventDefault(),
   });
-  // Ketuk kartu saat sudah ada pilihan = tambah/batalkan pilihan itu,
-  // bukan membuka aksi kartu. Di luar mode pilih, ketuk kartu tidak
-  // melakukan apa-apa (aksi tetap lewat tombol di dalam kartu).
+  // Ketuk kartu saat sudah ada pilihan = tambah/batalkan pilihan itu.
+  // Ketuk kartu transaksi di luar mode pilih = buka detailnya.
+  // Ketuk tepat setelah tahan lama diabaikan, supaya tahan lama tidak
+  // langsung membuka detail (pilihanlah yang terjadi, bukan detail).
+  const consumeLongPressClick = () => {
+    if (!lpFired.current) return false;
+    lpFired.current = false;
+    return true;
+  };
   const cardClickToggle = (list, setList, id) => (e) => {
+    if (consumeLongPressClick()) return;
     if (e.target.closest("button, a, input, select, textarea, label")) return;
     if (list.length) toggleSelect(list, setList, id);
+  };
+  const cardClickJob = (j) => (e) => {
+    if (consumeLongPressClick()) return;
+    if (e.target.closest("button, a, input, select, textarea, label")) return;
+    if (selectedJobs.length) toggleSelect(selectedJobs, setSelectedJobs, j.id);
+    else setDetailJob(j);
+  };
+  // Grafik dashboard interaktif: ketuk batang tren = transaksi pada
+  // tanggal itu; ketuk donat/legenda status = transaksi dengan status
+  // itu. Filter diterapkan lewat override loadJobs (bukan lewat state
+  // yang belum sempat ter-update), lalu pindah ke tab Transaksi.
+  const openJobsForDate = (date) => {
+    setJobFilterType("custom"); setJobFilterFrom(date); setJobFilterTo(date); setJobFilterStatus("");
+    loadJobs({ from: date, to: date, status: "" }); loadCustomers(); setTab("jobs");
+  };
+  const openJobsForStatus = (label) => {
+    const status = label === "Lunas" ? "lunas" : label === "DP" ? "dp" : "belum";
+    setJobFilterType("all"); setJobFilterStatus(status);
+    loadJobs({ from: "", to: "", status }); loadCustomers(); setTab("jobs");
   };
 
   const bulkDeleteCustomers = async () => {
@@ -747,9 +776,10 @@ export default function Home() {
             <Stat label="Total transaksi" value={dash.jobs} />
           </div>
           <div className="grid md:grid-cols-2 gap-4">
-            <Card title="Tren pemasukan (10 tanggal terakhir)"><BarChart labels={dash.trendDates} values={dash.trendValues} /></Card>
-            <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} /></Card>
+            <Card title="Tren pemasukan (10 tanggal terakhir)"><BarChart labels={dash.trendDates} values={dash.trendValues} onSelect={(date) => openJobsForDate(date)} /></Card>
+            <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} onSelect={(part) => openJobsForStatus(part.label)} /></Card>
           </div>
+          <p className="text-xs text-zinc-400">Ketuk batang grafik atau potongan donat untuk melihat transaksinya, dan ketuk kotak transaksi untuk melihat detailnya.</p>
           {selectedJobs.length > 0 && (
             <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
               <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
@@ -762,7 +792,7 @@ export default function Home() {
             <p className="text-xs text-zinc-400 px-4 pt-1">Tahan lama pada transaksi untuk memilih.</p>
             <div className="sm:hidden p-4 pt-2 space-y-3">
               {dash.recent.map((j) => (
-                <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickToggle(selectedJobs, setSelectedJobs, j.id)}
+                <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
                   className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-red-500/10" : "border-line"}`}>
                   <div className="flex justify-between gap-2">
                     <span className="flex items-start gap-2">
@@ -783,7 +813,7 @@ export default function Home() {
                 <thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">Tanggal</th><th className="py-2 pr-3">Pelanggan</th><th className="py-2 pr-3">Jasa</th><th className="py-2 pr-3">Nominal</th><th className="py-2">Status</th></tr></thead>
                 <tbody>
                   {dash.recent.map((j) => (
-                    <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickToggle(selectedJobs, setSelectedJobs, j.id)}
+                    <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
                       className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-red-500/10" : ""}`}>
                       <td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td>
                       <td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status)}</td>
@@ -919,7 +949,7 @@ export default function Home() {
           <div className="bg-panel border border-line rounded-2xl overflow-hidden">
             <div className="sm:hidden p-4 space-y-3">
               {jobs.map((j) => (
-                <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickToggle(selectedJobs, setSelectedJobs, j.id)}
+                <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
                   className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-red-500/10" : "border-line"}`}>
                   <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
@@ -937,7 +967,7 @@ export default function Home() {
             <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={jobs.length > 0 && selectedJobs.length === jobs.length} onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} aria-label="Pilih semua transaksi" /></th><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
               <tbody>{jobs.map((j) => (
-                <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickToggle(selectedJobs, setSelectedJobs, j.id)}
+                <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
                   className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-red-500/10" : ""}`}>
                   <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} /></td><td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
                   <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status)}</td>
