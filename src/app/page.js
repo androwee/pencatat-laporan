@@ -117,6 +117,8 @@ export default function Home() {
   const [detailJob, setDetailJob] = useState(null);
   const [historyCustomer, setHistoryCustomer] = useState(null);
   const [historyJobs, setHistoryJobs] = useState(null);
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
+  const dupConfirmed = useRef(false);
   const [settings, setSettings] = useState({});
   const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "" });
   const [servicePrices, setServicePrices] = useState([]);
@@ -375,10 +377,45 @@ export default function Home() {
 
   const handleAddNew = () => openJobModal(null);
 
+  // Duplikat = nama sama persis (tanpa peduli huruf besar/kecil) ATAU
+  // nomor WA sama (dinormalisasi: 08… dan 628… dianggap sama). Bukan
+  // pemblokiran: pelanggan berbeda boleh saja bernama sama atau berbagi
+  // nomor, jadi ini hanya peringatan dengan pilihan pakai data lama.
+  // Daftar lengkap selalu diambil dari API saat simpan, karena daftar di
+  // layar bisa sedang terfilter oleh pencarian.
+  const normPhone = (p) => {
+    let d = String(p || "").replace(/\D/g, "");
+    if (d.startsWith("62")) d = "0" + d.slice(2);
+    return d;
+  };
+  const findDuplicates = (all, name, phone, excludeId) => {
+    const n = String(name || "").trim().toLowerCase();
+    const ph = normPhone(phone);
+    return (all || []).filter((c) => {
+      if (excludeId && Number(c.id) === Number(excludeId)) return false;
+      const samePhone = ph && normPhone(c.phone) && normPhone(c.phone) === ph;
+      const sameName = n && String(c.name || "").trim().toLowerCase() === n;
+      return samePhone || sameName;
+    });
+  };
+
   const submitCustomer = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     try {
       const id = customerForm.id;
+      if (!dupConfirmed.current) {
+        const all = await api("/api/customers");
+        const matches = findDuplicates(all.customers, customerForm.name, customerForm.phone, id);
+        if (matches.length) {
+          setDuplicateWarning({
+            matches,
+            onProceed: () => { dupConfirmed.current = true; setDuplicateWarning(null); submitCustomer(); },
+            onUseExisting: (m) => { setDuplicateWarning(null); setShowCustomerModal(false); setSearch(m.name); },
+          });
+          return;
+        }
+      }
+      dupConfirmed.current = false;
       await api(id ? `/api/customers/${id}` : "/api/customers", {
         method: id ? "PUT" : "POST",
         body: JSON.stringify({ name: customerForm.name, address: customerForm.address, phone: customerForm.phone }),
@@ -390,13 +427,26 @@ export default function Home() {
   };
 
   const submitJob = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     try {
       const id = jobForm.id;
       let customerId = Number(jobForm.customer_id);
       // Mode pelanggan baru: simpan dulu ke list pelanggan, lalu pakai id-nya untuk transaksi.
       if (!id && jobCustomerMode === "new") {
         if (!newCustomer.name.trim()) throw new Error("Nama pelanggan baru wajib diisi.");
+        if (!dupConfirmed.current) {
+          const all = await api("/api/customers");
+          const matches = findDuplicates(all.customers, newCustomer.name, newCustomer.phone, null);
+          if (matches.length) {
+            setDuplicateWarning({
+              matches,
+              onProceed: () => { dupConfirmed.current = true; setDuplicateWarning(null); submitJob(); },
+              onUseExisting: (m) => { setDuplicateWarning(null); setJobCustomerMode("existing"); setJobForm((prev) => ({ ...prev, customer_id: String(m.id) })); },
+            });
+            return;
+          }
+        }
+        dupConfirmed.current = false;
         const created = await api("/api/customers", {
           method: "POST",
           body: JSON.stringify({ name: newCustomer.name, address: newCustomer.address, phone: newCustomer.phone }),
@@ -1538,6 +1588,30 @@ export default function Home() {
                 </div>
               </>
             )}
+          </div>
+        </Modal>
+      )}
+
+      {duplicateWarning && (
+        <Modal title="Pelanggan serupa sudah ada" onClose={() => setDuplicateWarning(null)}>
+          <div className="space-y-3 text-sm">
+            <p className="text-zinc-400">Nama atau nomor WA ini sudah tercatat. Pakai data lama supaya tidak terjadi duplikat, atau tetap simpan sebagai pelanggan baru bila memang orang yang berbeda.</p>
+            <div className="space-y-2">
+              {duplicateWarning.matches.map((m) => (
+                <div key={m.id} className="border border-line rounded-xl p-3 flex justify-between gap-2">
+                  <div>
+                    <strong>{m.name}</strong>
+                    {m.phone && <div className="text-zinc-400">{m.phone}</div>}
+                    {m.address && <div className="text-zinc-400">{m.address}</div>}
+                  </div>
+                  <button onClick={() => duplicateWarning.onUseExisting(m)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">Pakai ini</button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={duplicateWarning.onProceed} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm flex-1">Tetap simpan sebagai baru</button>
+              <button onClick={() => setDuplicateWarning(null)} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Batal</button>
+            </div>
           </div>
         </Modal>
       )}
