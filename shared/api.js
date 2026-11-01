@@ -520,6 +520,103 @@ export async function handleApi(request, env) {
       }
     }
 
+    // ---- Cadangan data (backup & restore) ----
+    // Restore MENGGANTI seluruh data dengan isi file cadangan. Seluruh
+    // payload divalidasi dulu sebelum ada baris yang dihapus, supaya
+    // file rusak tidak sempat menghapus data lalu gagal mengembalikan.
+    // Id asli ikut disimpan supaya relasi pelanggan–transaksi–baris jasa
+    // tetap utuh persis seperti di sumber cadangan.
+    if (path === "/api/backup/restore" && method === "POST") {
+      const body = await readJson(request);
+      if (!body || typeof body !== "object" || !Array.isArray(body.customers) || !Array.isArray(body.jobs)) {
+        return json({ error: "File cadangan tidak valid: harus berisi daftar pelanggan dan transaksi." }, 400);
+      }
+      const prices = Array.isArray(body.service_prices) ? body.service_prices : [];
+      const settingsIn = body.settings && typeof body.settings === "object" ? body.settings : {};
+      const isInt = (n) => Number.isSafeInteger(n);
+      const isStr = (v) => typeof v === "string";
+      const custIds = new Set();
+      for (const c of body.customers) {
+        if (!c || !isInt(c.id) || c.id <= 0 || custIds.has(c.id)) return json({ error: "Data pelanggan di cadangan tidak valid (id ganda/tidak valid)." }, 400);
+        custIds.add(c.id);
+        if (!isStr(c.name) || !c.name.trim() || c.name.length > 200) return json({ error: "Nama pelanggan di cadangan tidak valid." }, 400);
+        if (!isStr(c.address || "") || !isStr(c.phone || "") || (c.address || "").length > 500 || (c.phone || "").length > 50) return json({ error: "Alamat/telepon pelanggan di cadangan tidak valid." }, 400);
+      }
+      const priceIds = new Set();
+      const priceNames = new Set();
+      for (const p of prices) {
+        if (!p || !isInt(p.id) || p.id <= 0 || priceIds.has(p.id)) return json({ error: "Data harga jasa di cadangan tidak valid." }, 400);
+        priceIds.add(p.id);
+        const nm = isStr(p.service_type) ? p.service_type.trim().toLowerCase() : "";
+        if (!nm || priceNames.has(nm)) return json({ error: "Nama jasa di cadangan ganda/tidak valid." }, 400);
+        priceNames.add(nm);
+        if (!ITEM_UNITS.includes(p.unit || "")) return json({ error: "Satuan harga jasa di cadangan tidak valid." }, 400);
+        if (!isInt(p.unit_price) || p.unit_price < 0) return json({ error: "Harga satuan di cadangan tidak valid." }, 400);
+      }
+      const jobIds = new Set();
+      for (const j of body.jobs) {
+        if (!j || !isInt(j.id) || j.id <= 0 || jobIds.has(j.id)) return json({ error: "Data transaksi di cadangan tidak valid (id ganda/tidak valid)." }, 400);
+        jobIds.add(j.id);
+        if (!custIds.has(j.customer_id)) return json({ error: "Transaksi di cadangan mengacu ke pelanggan yang tidak ada di cadangan." }, 400);
+        if (!isStr(j.service_type) || !j.service_type.trim()) return json({ error: "Jenis jasa transaksi di cadangan tidak valid." }, 400);
+        if (!isInt(j.amount) || j.amount < 0) return json({ error: "Nominal transaksi di cadangan tidak valid." }, 400);
+        const paid = j.paid_amount === undefined ? 0 : j.paid_amount;
+        if (!isInt(paid) || paid < 0 || paid > j.amount) return json({ error: "Sudah dibayar di cadangan tidak valid." }, 400);
+        if (!STATUSES.includes(j.status)) return json({ error: "Status transaksi di cadangan tidak valid." }, 400);
+        if (!isValidDate(j.job_date)) return json({ error: "Tanggal transaksi di cadangan tidak valid." }, 400);
+        if (Array.isArray(j.items)) {
+          const v = validateItems({ items: j.items });
+          if (v.error) return json({ error: `Baris layanan di cadangan tidak valid: ${v.error}` }, 400);
+          if (v.total !== j.amount) return json({ error: "Total baris layanan tidak cocok dengan nominal transaksi di cadangan." }, 400);
+        }
+      }
+      const SETTING_KEYS = ["business_name", "business_address", "business_phone", "business_website", "business_logo", "bank_name", "bank_account_number", "bank_account_holder"];
+      const settingsOut = {};
+      for (const key of SETTING_KEYS) {
+        if (!(key in settingsIn)) continue;
+        const value = String(settingsIn[key] ?? "");
+        if (key === "business_logo") {
+          if (value && !/^data:image\/(png|jpeg);base64,/.test(value)) return json({ error: "Logo di cadangan bukan PNG/JPEG." }, 400);
+          if (value.length > 1500000) return json({ error: "Logo di cadangan terlalu besar." }, 400);
+          settingsOut[key] = value;
+        } else {
+          if (value.length > 200) return json({ error: `Isi ${key} di cadangan terlalu panjang.` }, 400);
+          settingsOut[key] = value.trim();
+        }
+      }
+      // Validasi lolos semua — baru sekarang ganti data.
+      await qRun(env, "CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+      await qRun(env, "CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER NOT NULL REFERENCES customers(id), service_type TEXT NOT NULL, amount INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'lunas', job_date TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+      await ensureServicePricesTable(env);
+      await ensureJobItemsTable(env);
+      await qRun(env, "DELETE FROM job_items");
+      await qRun(env, "DELETE FROM jobs");
+      await qRun(env, "DELETE FROM customers");
+      await qRun(env, "DELETE FROM service_prices");
+      await qRun(env, "DELETE FROM settings");
+      const now = new Date().toISOString();
+      for (const c of body.customers) {
+        await qRun(env, "INSERT INTO customers (id, name, address, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", c.id, c.name.trim(), (c.address || "").trim(), (c.phone || "").trim(), c.created_at || now, c.updated_at || now);
+      }
+      for (const p of prices) {
+        await qRun(env, "INSERT INTO service_prices (id, service_type, unit, unit_price, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", p.id, p.service_type.trim(), p.unit, p.unit_price, p.created_at || now, p.updated_at || now);
+      }
+      for (const [key, value] of Object.entries(settingsOut)) {
+        await qRun(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value);
+      }
+      for (const j of body.jobs) {
+        const paid = j.paid_amount === undefined ? 0 : j.paid_amount;
+        await qRun(env, "INSERT INTO jobs (id, customer_id, service_type, amount, paid_amount, status, job_date, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", j.id, j.customer_id, j.service_type.trim(), j.amount, paid, j.status, j.job_date, (j.note || "").trim(), j.created_at || now, j.updated_at || now);
+        const items = Array.isArray(j.items) && j.items.length
+          ? j.items
+          : [{ service_type: j.service_type, qty: 1, unit: "paket", unit_price: j.amount, amount: j.amount }];
+        for (const it of items) {
+          await qRun(env, "INSERT INTO job_items (job_id, service_type, qty, unit, unit_price, amount) VALUES (?, ?, ?, ?, ?, ?)", j.id, it.service_type, it.qty, it.unit, it.unit_price, it.amount);
+        }
+      }
+      return json({ ok: true, restored_customers: body.customers.length, restored_jobs: body.jobs.length, restored_prices: prices.length });
+    }
+
     // ---- Laporan pemasukan ----
     if (path === "/api/reports" && method === "GET") {
       const period = url.searchParams.get("period") || "monthly";

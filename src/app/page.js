@@ -329,6 +329,74 @@ export default function Home() {
     location.reload();
   };
 
+  // Cadangan data: unduh satu file JSON berisi pelanggan, transaksi
+  // (dengan baris jasanya), daftar harga, dan pengaturan usaha. Restore
+  // MENGGANTI seluruh data dengan isi file — jadi selalu unduh cadangan
+  // dulu sebelum restore, untuk jaga-jaga.
+  const [restoreFile, setRestoreFile] = useState(null);
+  const [restorePreview, setRestorePreview] = useState(null);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [backupMessage, setBackupMessage] = useState("");
+
+  const downloadBackup = async () => {
+    setBackupMessage("");
+    try {
+      const [cust, jobsRes, prices, settingsRes] = await Promise.all([
+        api("/api/customers"),
+        api("/api/jobs"),
+        api("/api/service-prices"),
+        api("/api/settings"),
+      ]);
+      const backup = {
+        app: "Pencatat Laporan",
+        version: 1,
+        exported_at: new Date().toISOString(),
+        customers: cust.customers || [],
+        jobs: jobsRes.jobs || [],
+        // Perhatian: endpoint harga mengembalikan kunci "prices", bukan
+        // "service_prices" — salah kunci di sini akan membuat daftar harga
+        // hilang diam-diam dari file cadangan.
+        service_prices: prices.prices || [],
+        settings: settingsRes.settings || {},
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pencatat-laporan-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setBackupMessage(`Cadangan diunduh: ${backup.customers.length} pelanggan, ${backup.jobs.length} transaksi, ${backup.service_prices.length} harga jasa. Simpan file ini baik-baik.`);
+    } catch (err) { setError(err.message); }
+  };
+
+  const pickRestoreFile = async (file) => {
+    setRestoreFile(file);
+    setRestorePreview(null);
+    setBackupMessage("");
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!parsed || !Array.isArray(parsed.customers) || !Array.isArray(parsed.jobs)) throw new Error("File ini bukan cadangan Pencatat Laporan.");
+      setRestorePreview({ data: parsed, customers: parsed.customers.length, jobs: parsed.jobs.length, prices: Array.isArray(parsed.service_prices) ? parsed.service_prices.length : 0, exported_at: parsed.exported_at || null });
+    } catch (err) { setRestorePreview({ error: err.message }); }
+  };
+
+  const doRestore = async () => {
+    if (!restorePreview?.data) return;
+    const ok = window.confirm(`Restore akan MENGHAPUS seluruh data yang ada sekarang (${customers.length} pelanggan, ${jobs.length} transaksi) dan menggantinya dengan isi file cadangan (${restorePreview.customers} pelanggan, ${restorePreview.jobs} transaksi, ${restorePreview.prices} harga jasa). File cadangan di perangkatmu tidak ikut berubah. Lanjutkan?`);
+    if (!ok) return;
+    setRestoreBusy(true);
+    try {
+      const res = await api("/api/backup/restore", { method: "POST", body: JSON.stringify(restorePreview.data) });
+      setRestoreFile(null);
+      setRestorePreview(null);
+      await Promise.all([loadDashboard(), loadCustomers(search), loadJobs(), loadSettings(), loadServicePrices()]);
+      setBackupMessage(`Restore selesai: ${res.restored_customers} pelanggan, ${res.restored_jobs} transaksi, ${res.restored_prices} harga jasa.`);
+    } catch (err) { setError(err.message); }
+    finally { setRestoreBusy(false); }
+  };
+
   const openJobModal = (job) => {
     if (job) {
       setJobCustomerMode("existing");
@@ -1532,6 +1600,22 @@ export default function Home() {
                   </div>
                 ))}
               </div>
+            </div>
+            <div className="border-t border-line pt-4 space-y-2">
+              <h3 className="font-bold mb-1">Cadangan data</h3>
+              <p className="text-sm text-zinc-400">Unduh seluruh data (pelanggan, transaksi, daftar harga, dan pengaturan usaha) ke satu file JSON. Bila data terhapus salah atau bermasalah, pulihkan dari file itu. Restore mengganti seluruh data yang ada sekarang, jadi unduh cadangan dulu sebelum restore.</p>
+              <button type="button" onClick={downloadBackup} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold text-sm">Unduh cadangan</button>
+              <label className="block text-sm text-zinc-400 pt-2">Pulihkan dari file cadangan:</label>
+              <input type="file" accept=".json,application/json" onChange={(e) => pickRestoreFile(e.target.files?.[0] || null)} className="text-sm w-full" />
+              {restorePreview?.error && <p className="text-sm text-red-400">{restorePreview.error}</p>}
+              {restorePreview?.data && (
+                <div className="border border-line rounded-xl p-3 text-sm space-y-2">
+                  <p><strong>{restoreFile?.name}</strong>{restorePreview.exported_at && <span className="text-zinc-400"> · diekspor {restorePreview.exported_at.slice(0, 10)}</span>}</p>
+                  <p className="text-zinc-400">{restorePreview.customers} pelanggan · {restorePreview.jobs} transaksi · {restorePreview.prices} harga jasa</p>
+                  <button type="button" onClick={doRestore} disabled={restoreBusy} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">{restoreBusy ? "Memulihkan…" : "Pulihkan dari file ini"}</button>
+                </div>
+              )}
+              {backupMessage && <p className="text-sm text-emerald-400">{backupMessage}</p>}
             </div>
             <div className="border-t border-line pt-4">
               <h3 className="font-bold mb-1">Aplikasi</h3>
