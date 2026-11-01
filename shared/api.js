@@ -183,6 +183,21 @@ async function ensureJobItemsTable(env) {
   await qRun(env, "CREATE INDEX IF NOT EXISTS idx_job_items_job ON job_items(job_id)");
 }
 
+// Kolom paid_amount (sudah dibayar) ditambahkan ke jobs yang sudah ada
+// lewat ALTER, bukan migrasi manual. Transaksi lama yang berstatus lunas
+// dianggap sudah dibayar penuh, karena status adalah satu-satunya bukti
+// pembayaran yang tercatat untuk data lama tersebut.
+async function ensurePaidAmountColumn(env) {
+  try { await qRun(env, "ALTER TABLE jobs ADD COLUMN paid_amount INTEGER NOT NULL DEFAULT 0"); } catch {}
+  try { await qRun(env, "UPDATE jobs SET paid_amount = amount WHERE status = 'lunas' AND (paid_amount IS NULL OR paid_amount = 0)"); } catch {}
+}
+
+function validatePaidAmount(paidRaw, amount) {
+  const paid = Number(paidRaw ?? 0);
+  if (!Number.isSafeInteger(paid) || paid < 0 || paid > amount) return { error: "Sudah dibayar harus angka 0 sampai total." };
+  return { paid };
+}
+
 async function saveJobItems(env, jobId, items) {
   await ensureJobItemsTable(env);
   await qRun(env, "DELETE FROM job_items WHERE job_id = ?", jobId);
@@ -369,6 +384,7 @@ export async function handleApi(request, env) {
       if (customerId) { sql += " AND j.customer_id = ?"; params.push(Number(customerId)); }
       if (STATUSES.includes(status)) { sql += " AND j.status = ?"; params.push(status); }
       sql += " ORDER BY j.job_date DESC, j.id DESC LIMIT 1000";
+      await ensurePaidAmountColumn(env);
       const jobs = await qAll(env, sql, ...params);
       return json({ jobs: await attachJobItems(env, jobs) });
     }
@@ -393,12 +409,15 @@ export async function handleApi(request, env) {
       if (!customerId) return json({ error: "Pilih pelanggan dulu." }, 400);
       if (!isValidDate(jobDate)) return json({ error: "Tanggal tidak valid (YYYY-MM-DD)." }, 400);
       if (!STATUSES.includes(status)) return json({ error: "Status tidak valid." }, 400);
+      await ensurePaidAmountColumn(env);
+      const paidV = validatePaidAmount(body?.paid_amount, amount);
+      if (paidV.error) return json({ error: paidV.error }, 400);
       const customer = await qFirst(env, "SELECT id FROM customers WHERE id = ?", customerId);
       if (!customer) return json({ error: "Pelanggan tidak ditemukan." }, 404);
       const now = new Date().toISOString();
       const res = await qRun(env,
-        "INSERT INTO jobs (customer_id, service_type, amount, status, job_date, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        customerId, serviceType, amount, status, jobDate, (body.note || "").trim(), now, now);
+        "INSERT INTO jobs (customer_id, service_type, amount, paid_amount, status, job_date, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        customerId, serviceType, amount, paidV.paid, status, jobDate, (body.note || "").trim(), now, now);
       await saveJobItems(env, res.meta.last_row_id, items);
       const row = await qFirst(env, "SELECT * FROM jobs WHERE id = ?", res.meta.last_row_id);
       return json({ job: { ...row, items } }, 201);
@@ -427,10 +446,14 @@ export async function handleApi(request, env) {
         if (!isValidDate(jobDate) || !STATUSES.includes(status)) {
           return json({ error: "Data transaksi tidak valid." }, 400);
         }
-        await qRun(env, "UPDATE jobs SET service_type = ?, amount = ?, status = ?, job_date = ?, note = ?, updated_at = ? WHERE id = ?",
-          serviceType, amount, status, jobDate, (body.note || "").trim(), new Date().toISOString(), id);
+        await ensurePaidAmountColumn(env);
+        const existing = await qFirst(env, "SELECT * FROM jobs WHERE id = ?", id);
+        if (!existing) return json({ error: "Transaksi tidak ditemukan." }, 404);
+        const paidV = validatePaidAmount(body?.paid_amount !== undefined ? body.paid_amount : existing.paid_amount, amount);
+        if (paidV.error) return json({ error: paidV.error }, 400);
+        await qRun(env, "UPDATE jobs SET service_type = ?, amount = ?, paid_amount = ?, status = ?, job_date = ?, note = ?, updated_at = ? WHERE id = ?",
+          serviceType, amount, paidV.paid, status, jobDate, (body.note || "").trim(), new Date().toISOString(), id);
         const row = await qFirst(env, "SELECT * FROM jobs WHERE id = ?", id);
-        if (!row) return json({ error: "Transaksi tidak ditemukan." }, 404);
         await saveJobItems(env, id, items);
         return json({ job: { ...row, items } });
       }
@@ -488,10 +511,12 @@ export async function handleApi(request, env) {
         `SELECT j.*, c.name AS customer_name, c.phone FROM jobs j JOIN customers c ON c.id = j.customer_id
          WHERE j.job_date BETWEEN ? AND ? ORDER BY j.job_date ASC, j.id ASC`, from, to);
       const jobs = await attachJobItems(env, jobsRaw);
-      const lines = ["tanggal,nama_pelanggan,telepon_wa,jenis_jasa,jumlah,satuan,harga_satuan_rp,subtotal_rp,status,catatan"];
+      const lines = ["tanggal,nama_pelanggan,telepon_wa,jenis_jasa,jumlah,satuan,harga_satuan_rp,subtotal_rp,status,catatan,sudah_dibayar_rp,sisa_rp"];
       for (const j of jobs) {
+        const paid = Number(j.paid_amount || 0);
+        const remaining = Math.max(0, Number(j.amount) - paid);
         for (const it of j.items) {
-          lines.push([j.job_date, j.customer_name, j.phone, it.service_type, it.qty, it.unit, it.unit_price, it.amount, j.status, j.note].map(csvEscape).join(","));
+          lines.push([j.job_date, j.customer_name, j.phone, it.service_type, it.qty, it.unit, it.unit_price, it.amount, j.status, j.note, paid, remaining].map(csvEscape).join(","));
         }
       }
       return new Response(lines.join("\n"), {

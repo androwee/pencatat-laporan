@@ -41,7 +41,7 @@ function Stat({ label, value }) {
 }
 
 const emptyCustomer = { id: "", name: "", address: "", phone: "" };
-const emptyJob = { id: "", customer_id: "", job_date: todayWib(), status: "lunas", note: "" };
+const emptyJob = { id: "", customer_id: "", job_date: todayWib(), status: "lunas", note: "", paid_amount: "" };
 const emptyJobItem = { service_type: "", qty: 1, unit: "kubik", unit_price: "" };
 
 function Modal({ title, onClose, children }) {
@@ -103,6 +103,8 @@ export default function Home() {
   const [jobForm, setJobForm] = useState(emptyJob);
   const [jobItems, setJobItems] = useState([{ ...emptyJobItem }]);
   const fmtQty = (q) => { const n = Number(q); if (!Number.isFinite(n)) return q; return Number.isInteger(n) ? String(n) : String(n).replace(".", ","); };
+  const paidOf = (job) => Number(job?.paid_amount || 0);
+  const remainingOf = (job) => Math.max(0, Number(job?.amount || 0) - paidOf(job));
   const jobItemsTotal = jobItems.reduce((sum, it) => sum + Math.round(Number(it.qty || 0) * Number(it.unit_price || 0)), 0);
   const [jobCustomerMode, setJobCustomerMode] = useState("existing");
   const [newCustomer, setNewCustomer] = useState({ name: "", address: "", phone: "" });
@@ -142,9 +144,12 @@ export default function Home() {
         api("/api/jobs"),
       ]);
       const trend = groupByDate(allJobs.jobs);
+      const outstandingJobs = allJobs.jobs.filter((j) => j.status !== "lunas" && Math.max(0, Number(j.amount) - Number(j.paid_amount || 0)) > 0);
       setDash({
         today: daily.totals.total, month: monthly.totals.total,
         customers: cust.customers.length, jobs: allJobs.jobs.length,
+        outstanding: outstandingJobs.reduce((s, j) => s + Math.max(0, Number(j.amount) - Number(j.paid_amount || 0)), 0),
+        outstandingCount: outstandingJobs.length,
         recent: allJobs.jobs.slice(0, 10),
         trendDates: trend.dates.slice(-10), trendValues: trend.values.slice(-10),
         status: statusParts({
@@ -298,7 +303,7 @@ export default function Home() {
   const openJobModal = (job) => {
     if (job) {
       setJobCustomerMode("existing");
-      setJobForm({ id: job.id, customer_id: String(job.customer_id), job_date: job.job_date, status: job.status, note: job.note || "" });
+      setJobForm({ id: job.id, customer_id: String(job.customer_id), job_date: job.job_date, status: job.status, note: job.note || "", paid_amount: String(job.paid_amount ?? 0) });
       setJobItems(job.items?.length
         ? job.items.map((it) => ({ service_type: it.service_type, qty: it.qty, unit: it.unit, unit_price: String(it.unit_price) }))
         : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: String(job.amount) }]);
@@ -354,10 +359,15 @@ export default function Home() {
       if (!items.length || items.some((it) => !it.service_type || !(it.qty > 0) || !(it.unit_price >= 0))) {
         throw new Error("Isi tiap baris layanan: jenis jasa, jumlah > 0, dan harga satuan.");
       }
+      const paidAmount = Number(jobForm.paid_amount || 0);
+      if (paidAmount < 0 || paidAmount > jobItemsTotal) {
+        throw new Error("Sudah dibayar tidak boleh melebihi total.");
+      }
       await api(id ? `/api/jobs/${id}` : "/api/jobs", {
         method: id ? "PUT" : "POST",
         body: JSON.stringify({
           customer_id: customerId, items, job_date: jobForm.job_date, status: jobForm.status, note: jobForm.note,
+          paid_amount: paidAmount,
         }),
       });
       setJobForm({ ...emptyJob, job_date: todayWib() });
@@ -560,7 +570,10 @@ export default function Home() {
     const bankLine = settings.bank_name && settings.bank_account_number
       ? `\nPembayaran: ${settings.bank_name} ${settings.bank_account_number}${settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}`
       : "";
-    const msg = `${businessName}\nINVOICE ${invNo}\nTanggal: ${job.job_date}\nPelanggan: ${job.customer_name}\n\n${lines}\n\nTotal: ${fmtRp(job.amount)}\nStatus: ${statusLabel}${bankLine}\n\nTerima kasih.`;
+    const paid = Number(job.paid_amount || 0);
+    const remaining = Math.max(0, Number(job.amount) - paid);
+    const paidLines = `${paid > 0 ? `\nSudah dibayar: ${fmtRp(paid)}` : ""}${remaining > 0 ? `\nSisa tagihan: ${fmtRp(remaining)}` : ""}`;
+    const msg = `${businessName}\nINVOICE ${invNo}\nTanggal: ${job.job_date}\nPelanggan: ${job.customer_name}\n\n${lines}\n\nTotal: ${fmtRp(job.amount)}${paidLines}\nStatus: ${statusLabel}${bankLine}\n\nTerima kasih.`;
     const filename = `invoice-${job.id}-${job.job_date}.pdf`;
     // 1. Utamakan kirim file PDF langsung lewat lembar berbagi perangkat
     // (Web Share API, didukung Chrome Android). Di lembar berbagi, pilih
@@ -648,11 +661,21 @@ export default function Home() {
       doc.setFont("helvetica", "bold"); doc.setFontSize(13);
       doc.text("Total", 14, y); doc.text(fmtRp(job.amount), 196, y, { align: "right" }); y += 12;
       doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+      const paid = Number(job.paid_amount || 0);
+      const remaining = Math.max(0, Number(job.amount) - paid);
+      if (paid > 0) { doc.text(`Sudah dibayar: ${fmtRp(paid)}`, 14, y); y += 6; }
+      if (remaining > 0) {
+        doc.setFont("helvetica", "bold");
+        doc.text(`Sisa tagihan: ${fmtRp(remaining)}`, 14, y); y += 6;
+        doc.setFont("helvetica", "normal");
+      }
       const note = job.status === "lunas"
         ? "Status pembayaran: Lunas. Terima kasih atas pembayaran Anda."
-        : job.status === "dp"
-          ? "Status pembayaran: DP. Nominal di atas adalah total jasa; sisa pembayaran sesuai kesepakatan."
-          : "Status pembayaran: Belum bayar. Mohon selesaikan pembayaran.";
+        : paid > 0
+          ? `Status pembayaran: ${statusLabel}. Sudah dibayar ${fmtRp(paid)}, sisa ${fmtRp(remaining)}.`
+          : job.status === "dp"
+            ? "Status pembayaran: DP. Nominal di atas adalah total jasa; sisa pembayaran sesuai kesepakatan."
+            : "Status pembayaran: Belum bayar. Mohon selesaikan pembayaran.";
       doc.splitTextToSize(note, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
       if (settings.bank_name && settings.bank_account_number) {
         y += 2; doc.setFont("helvetica", "bold");
@@ -670,6 +693,26 @@ export default function Home() {
       const doc = await buildInvoiceDoc(job);
       doc.save(`invoice-${job.id}-${job.job_date}.pdf`);
     } catch (err) { setError(`Gagal membuat invoice: ${err.message}`); }
+  };
+
+  const markJobPaid = async (job) => {
+    const remaining = remainingOf(job);
+    if (!remaining) return;
+    if (!confirm(`Tandai transaksi ini sebagai lunas? Sisa ${fmtRp(remaining)} akan dicatat sebagai sudah dibayar.`)) return;
+    try {
+      const updated = await api(`/api/jobs/${job.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          customer_id: job.customer_id,
+          items: (job.items || [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: job.amount }])
+            .map((it) => ({ service_type: it.service_type, qty: it.qty, unit: it.unit, unit_price: it.unit_price })),
+          job_date: job.job_date, status: "lunas", note: job.note || "", paid_amount: job.amount,
+        }),
+      });
+      setDetailJob(updated.job);
+      loadJobs();
+      if (tab === "dashboard") loadDashboard();
+    } catch (err) { setError(err.message); }
   };
 
   if (view === "loading") return <main className="max-w-3xl mx-auto p-6 text-zinc-400">Memuat…</main>;
@@ -775,6 +818,12 @@ export default function Home() {
             <Stat label="Total pelanggan" value={dash.customers} />
             <Stat label="Total transaksi" value={dash.jobs} />
           </div>
+          {dash.outstanding > 0 && (
+            <div className="bg-red-500/10 border border-persona/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
+              <span className="font-bold">Total piutang: {fmtRp(dash.outstanding)}</span>
+              <span className="text-sm text-zinc-400">{dash.outstandingCount} transaksi belum lunas</span>
+            </div>
+          )}
           <div className="grid md:grid-cols-2 gap-4">
             <Card title="Tren pemasukan (10 tanggal terakhir)"><BarChart labels={dash.trendDates} values={dash.trendValues} onSelect={(date) => openJobsForDate(date)} /></Card>
             <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} onSelect={(part) => openJobsForStatus(part.label)} /></Card>
@@ -804,6 +853,7 @@ export default function Home() {
                   </div>
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
+                  {remainingOf(j) > 0 && <div className="text-sm font-bold text-red-400 mt-1">Sisa: {fmtRp(remainingOf(j))}</div>}
                 </div>
               ))}
               {!dash.recent.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
@@ -954,6 +1004,7 @@ export default function Home() {
                   <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
+                  {remainingOf(j) > 0 && <div className="text-sm font-bold text-red-400 mt-1">Sisa: {fmtRp(remainingOf(j))}</div>}
                   {j.note && <div className="text-zinc-400 text-sm mt-1">{j.note}</div>}
                   <div className="flex gap-2 mt-3 flex-wrap">
                     <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Detail</button>
@@ -1145,6 +1196,22 @@ export default function Home() {
                 <option value="lunas">Lunas</option><option value="dp">DP</option><option value="belum">Belum bayar</option>
               </select>
             </label>
+            <label className="block text-sm font-medium">Sudah dibayar (Rp)
+              <input className="mt-1" type="number" min="0" step="1" inputMode="numeric" placeholder="0 bila belum ada pembayaran"
+                value={jobForm.paid_amount}
+                onChange={(e) => {
+                  const paid = e.target.value;
+                  const paidNum = Number(paid || 0);
+                  const status = jobItemsTotal > 0
+                    ? (paidNum >= jobItemsTotal ? "lunas" : paidNum > 0 ? "dp" : "belum")
+                    : jobForm.status;
+                  setJobForm({ ...jobForm, paid_amount: paid, status });
+                }} />
+            </label>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">Sisa tagihan: <strong className={Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)) > 0 ? "text-red-400" : "text-emerald-400"}>{fmtRp(Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)))}</strong></span>
+              <button type="button" onClick={() => setJobForm({ ...jobForm, paid_amount: String(jobItemsTotal), status: "lunas" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Tandai lunas</button>
+            </div>
             <label className="block text-sm font-medium">Catatan
               <input className="mt-1" value={jobForm.note} onChange={(e) => setJobForm({ ...jobForm, note: e.target.value })} />
             </label>
@@ -1274,6 +1341,8 @@ export default function Home() {
               </div>
             </div>
             <div className="flex justify-between gap-3"><span className="text-zinc-400">Status</span>{statusPill(detailJob.status)}</div>
+            {paidOf(detailJob) > 0 && <div className="flex justify-between gap-3"><span className="text-zinc-400">Sudah dibayar</span><strong>{fmtRp(paidOf(detailJob))}</strong></div>}
+            {remainingOf(detailJob) > 0 && <div className="flex justify-between gap-3"><span className="text-zinc-400">Sisa tagihan</span><strong className="text-red-400">{fmtRp(remainingOf(detailJob))}</strong></div>}
             {detailJob.note && <div className="flex justify-between gap-3"><span className="text-zinc-400">Catatan</span><strong className="text-right">{detailJob.note}</strong></div>}
           </div>
           <div className="mt-5 space-y-2">
@@ -1286,6 +1355,9 @@ export default function Home() {
               </svg>
               Kirim via WhatsApp
             </button>
+            {remainingOf(detailJob) > 0 && (
+              <button onClick={() => markJobPaid(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tandai lunas (sisa {fmtRp(remainingOf(detailJob))})</button>
+            )}
             <div className="grid grid-cols-3 gap-2">
               <button onClick={() => downloadInvoice(detailJob)} aria-label="Unduh Invoice (PDF)" title="Unduh Invoice (PDF)" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>

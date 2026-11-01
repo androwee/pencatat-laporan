@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   service_type TEXT NOT NULL,
   amount INTEGER NOT NULL DEFAULT 0,
+  paid_amount INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'lunas' CHECK (status IN ('lunas', 'dp', 'belum')),
   job_date TEXT NOT NULL,
   note TEXT NOT NULL DEFAULT '',
