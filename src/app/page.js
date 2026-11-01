@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BarChart, DonutChart, HBarChart, fmtRp, groupByDate, statusParts, statusPill } from "../components/Charts";
 
 const todayWib = () => {
@@ -393,6 +393,40 @@ export default function Home() {
     setList(list.length === ids.length && ids.length > 0 ? [] : ids);
   };
 
+  // Tahan lama (touch & hold) untuk memilih item, ala WhatsApp/Galeri.
+  // Tahan ~0,5 detik: getar sebentar + item terpilih. Geser jari/mouse
+  // (>12px, mis. saat scroll) membatalkan tahan, dan ketukan biasa
+  // (<0,5 detik) tidak terganggu. Tombol/input di dalam kartu tidak
+  // memicu tahan lama, supaya Detail/Edit/Hapus tetap berfungsi normal.
+  const lpTimer = useRef(null);
+  const lpStart = useRef(null);
+  const lpClear = () => { if (lpTimer.current) clearTimeout(lpTimer.current); lpTimer.current = null; lpStart.current = null; };
+  const lpProps = (toggle) => ({
+    onPointerDown: (e) => {
+      if (e.target.closest("button, a, input, select, textarea, label")) return;
+      lpStart.current = { x: e.clientX, y: e.clientY };
+      lpTimer.current = setTimeout(() => {
+        try { navigator.vibrate?.(15); } catch {}
+        toggle();
+        lpClear();
+      }, 500);
+    },
+    onPointerMove: (e) => {
+      if (!lpStart.current) return;
+      if (Math.abs(e.clientX - lpStart.current.x) > 12 || Math.abs(e.clientY - lpStart.current.y) > 12) lpClear();
+    },
+    onPointerUp: lpClear,
+    onPointerCancel: lpClear,
+    onContextMenu: (e) => e.preventDefault(),
+  });
+  // Ketuk kartu saat sudah ada pilihan = tambah/batalkan pilihan itu,
+  // bukan membuka aksi kartu. Di luar mode pilih, ketuk kartu tidak
+  // melakukan apa-apa (aksi tetap lewat tombol di dalam kartu).
+  const cardClickToggle = (list, setList, id) => (e) => {
+    if (e.target.closest("button, a, input, select, textarea, label")) return;
+    if (list.length) toggleSelect(list, setList, id);
+  };
+
   const bulkDeleteCustomers = async () => {
     if (!selectedCustomers.length) return;
     if (!confirm(`Hapus ${selectedCustomers.length} pelanggan beserta semua transaksinya? Tindakan ini tidak bisa dibatalkan.`)) return;
@@ -716,11 +750,20 @@ export default function Home() {
             <Card title="Tren pemasukan (10 tanggal terakhir)"><BarChart labels={dash.trendDates} values={dash.trendValues} /></Card>
             <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} /></Card>
           </div>
+          {selectedJobs.length > 0 && (
+            <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
+              <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
+              <button onClick={bulkDeleteJobs} className="bg-persona hover:bg-persona-dark px-4 py-2 rounded-xl font-bold text-sm">Hapus yang dipilih</button>
+              <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
+            </div>
+          )}
           <section className="bg-panel border border-line rounded-2xl overflow-hidden">
             <h2 className="font-bold p-4 pb-0">Transaksi terbaru</h2>
+            <p className="text-xs text-zinc-400 px-4 pt-1">Tahan lama pada transaksi untuk memilih.</p>
             <div className="sm:hidden p-4 pt-2 space-y-3">
               {dash.recent.map((j) => (
-                <div key={j.id} className="border border-line rounded-xl p-3">
+                <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickToggle(selectedJobs, setSelectedJobs, j.id)}
+                  className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-red-500/10" : "border-line"}`}>
                   <div className="flex justify-between gap-2">
                     <span className="flex items-start gap-2">
                       <input type="checkbox" className="w-4 h-4 accent-[#e60012] mt-1 shrink-0" style={{ width: "auto" }}
@@ -740,7 +783,8 @@ export default function Home() {
                 <thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">Tanggal</th><th className="py-2 pr-3">Pelanggan</th><th className="py-2 pr-3">Jasa</th><th className="py-2 pr-3">Nominal</th><th className="py-2">Status</th></tr></thead>
                 <tbody>
                   {dash.recent.map((j) => (
-                    <tr key={j.id} className="border-t border-line">
+                    <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickToggle(selectedJobs, setSelectedJobs, j.id)}
+                      className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-red-500/10" : ""}`}>
                       <td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td>
                       <td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status)}</td>
                     </tr>
@@ -776,10 +820,12 @@ export default function Home() {
               <button onClick={() => setSelectedCustomers([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
             )}
           </div>
+          <p className="text-xs text-zinc-400">Tahan lama pada pelanggan untuk memilih.</p>
           <div className="bg-panel border border-line rounded-2xl overflow-hidden">
             <div className="sm:hidden p-4 space-y-3">
               {customers.map((c) => (
-                <div key={c.id} className="border border-line rounded-xl p-3">
+                <div key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
+                  className={`border rounded-xl p-3 select-none ${selectedCustomers.includes(c.id) ? "border-persona bg-red-500/10" : "border-line"}`}>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="w-4 h-4 accent-[#e60012] mt-1 shrink-0" style={{ width: "auto" }}
                       checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} />
@@ -798,7 +844,8 @@ export default function Home() {
             <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={customers.length > 0 && selectedCustomers.length === customers.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3"></th></tr></thead>
               <tbody>{customers.map((c) => (
-                <tr key={c.id} className="border-t border-line">
+                <tr key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
+                  className={`border-t border-line select-none ${selectedCustomers.includes(c.id) ? "bg-red-500/10" : ""}`}>
                   <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td>
                   <td className="p-3 whitespace-nowrap">
                     <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
@@ -868,10 +915,12 @@ export default function Home() {
               <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
             )}
           </div>
+          <p className="text-xs text-zinc-400">Tahan lama pada transaksi untuk memilih.</p>
           <div className="bg-panel border border-line rounded-2xl overflow-hidden">
             <div className="sm:hidden p-4 space-y-3">
               {jobs.map((j) => (
-                <div key={j.id} className="border border-line rounded-xl p-3">
+                <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickToggle(selectedJobs, setSelectedJobs, j.id)}
+                  className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-red-500/10" : "border-line"}`}>
                   <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
@@ -888,7 +937,8 @@ export default function Home() {
             <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={jobs.length > 0 && selectedJobs.length === jobs.length} onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} aria-label="Pilih semua transaksi" /></th><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
               <tbody>{jobs.map((j) => (
-                <tr key={j.id} className="border-t border-line">
+                <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickToggle(selectedJobs, setSelectedJobs, j.id)}
+                  className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-red-500/10" : ""}`}>
                   <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} /></td><td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
                   <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status)}</td>
                   <td className="p-3 whitespace-nowrap">
