@@ -117,6 +117,8 @@ export default function Home() {
   const [detailJob, setDetailJob] = useState(null);
   const [settings, setSettings] = useState({});
   const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "" });
+  const [servicePrices, setServicePrices] = useState([]);
+  const [priceForm, setPriceForm] = useState({ id: "", service_type: "", unit: "kubik", unit_price: "" });
   const [settingsSaved, setSettingsSaved] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -205,6 +207,28 @@ export default function Home() {
     } catch (e) { /* settings opsional, abaikan */ }
   }, []);
 
+  const loadServicePrices = useCallback(async () => {
+    try { const data = await api("/api/service-prices"); setServicePrices(data.prices || []); } catch (e) { /* daftar harga opsional, abaikan */ }
+  }, []);
+
+  const submitPrice = async (e) => {
+    e.preventDefault();
+    try {
+      const id = priceForm.id;
+      await api(id ? `/api/service-prices/${id}` : "/api/service-prices", {
+        method: id ? "PUT" : "POST",
+        body: JSON.stringify({ service_type: priceForm.service_type, unit: priceForm.unit, unit_price: Number(priceForm.unit_price) }),
+      });
+      setPriceForm({ id: "", service_type: "", unit: "kubik", unit_price: "" });
+      loadServicePrices();
+    } catch (err) { setError(err.message); }
+  };
+
+  const deletePrice = async (id) => {
+    if (!confirm("Hapus harga jasa ini? Transaksi lama tidak berubah.")) return;
+    try { await api(`/api/service-prices/${id}`, { method: "DELETE" }); loadServicePrices(); } catch (err) { setError(err.message); }
+  };
+
   const loadReport = useCallback(async () => {
     try {
       setError("");
@@ -235,9 +259,10 @@ export default function Home() {
         loadDashboard();
         loadCustomers();
         loadSettings();
+        loadServicePrices();
       } catch { setView("login"); }
     })();
-  }, [loadDashboard, loadCustomers, loadSettings]);
+  }, [loadDashboard, loadCustomers, loadSettings, loadServicePrices]);
 
   useEffect(() => { if (tab === "customers") loadCustomers(search); }, [search, tab, loadCustomers]);
 
@@ -501,6 +526,7 @@ export default function Home() {
       bank_account_holder: settings.bank_account_holder || "",
     });
     setSettingsSaved("");
+    loadServicePrices();
     setShowSettingsModal(true);
   };
 
@@ -1237,7 +1263,10 @@ export default function Home() {
             )}
             <div>
               <datalist id="jasa-list">
-                <option value="Sedot WC" /><option value="Perbaikan Wastafel" /><option value="Sedot Limbah" /><option value="Pembersihan Saluran" /><option value="Lain-lain" />
+                {servicePrices.map((p) => <option key={p.id} value={p.service_type} />)}
+                {["Sedot WC", "Perbaikan Wastafel", "Sedot Limbah", "Pembersihan Saluran", "Lain-lain"]
+                  .filter((s) => !servicePrices.some((p) => p.service_type.toLowerCase() === s.toLowerCase()))
+                  .map((s) => <option key={s} value={s} />)}
               </datalist>
               <p className="text-sm font-medium mb-2">Layanan * <span className="text-zinc-400 font-normal">— satu transaksi bisa berisi beberapa layanan, tiap baris dihitung dari jumlah × harga satuan</span></p>
               <div className="space-y-3">
@@ -1245,7 +1274,13 @@ export default function Home() {
                   <div key={idx} className="border border-line rounded-xl p-3 space-y-2">
                     <label className="block text-sm font-medium">Jenis jasa *
                       <input className="mt-1" required list="jasa-list" placeholder="cth: Sedot WC, Perbaikan Wastafel, Lain-lain" value={it.service_type}
-                        onChange={(e) => setJobItems(jobItems.map((x, i) => i === idx ? { ...x, service_type: e.target.value } : x))} />
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const preset = servicePrices.find((p) => p.service_type.toLowerCase() === value.trim().toLowerCase());
+                          setJobItems(jobItems.map((x, i) => i === idx
+                            ? { ...x, service_type: value, ...(preset ? { unit: preset.unit, unit_price: String(preset.unit_price) } : {}) }
+                            : x));
+                        }} />
                     </label>
                     <div className="grid grid-cols-3 gap-2">
                       <label className="block text-sm font-medium">Jumlah *
@@ -1384,6 +1419,41 @@ export default function Home() {
                 {settingsSaved && <span className="text-sm text-emerald-400">{settingsSaved}</span>}
               </div>
             </form>
+            <div className="border-t border-line pt-4 space-y-3">
+              <h3 className="font-bold">Daftar Harga Jasa</h3>
+              <p className="text-sm text-zinc-400">Isi sekali, setelah itu harga satuan terisi otomatis saat jasa ini dipilih di form transaksi. Mengubah harga di sini hanya memengaruhi transaksi baru, transaksi lama tidak berubah.</p>
+              <form onSubmit={submitPrice} className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-sm font-medium col-span-2">Nama jasa
+                    <input className="mt-1" required value={priceForm.service_type} onChange={(e) => setPriceForm({ ...priceForm, service_type: e.target.value })} placeholder="cth: Sedot WC" />
+                  </label>
+                  <label className="block text-sm font-medium">Satuan
+                    <select className="mt-1" value={priceForm.unit} onChange={(e) => setPriceForm({ ...priceForm, unit: e.target.value })}>
+                      <option value="kubik">kubik</option><option value="strip">strip</option><option value="pcs">pcs</option><option value="paket">paket</option>
+                    </select>
+                  </label>
+                  <label className="block text-sm font-medium">Harga satuan (Rp)
+                    <input className="mt-1" type="number" min="0" step="1" required inputMode="numeric" value={priceForm.unit_price} onChange={(e) => setPriceForm({ ...priceForm, unit_price: e.target.value })} />
+                  </label>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <button type="submit" className="bg-persona hover:bg-persona-dark px-4 py-2.5 rounded-xl font-bold text-sm flex-1">{priceForm.id ? "Simpan perubahan" : "Tambah harga"}</button>
+                  {priceForm.id && <button type="button" onClick={() => setPriceForm({ id: "", service_type: "", unit: "kubik", unit_price: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Batal</button>}
+                </div>
+              </form>
+              {!servicePrices.length && <p className="text-sm text-zinc-400">Belum ada harga tersimpan. Tambahkan jasa yang sering dikerjakan di atas.</p>}
+              <div className="space-y-2">
+                {servicePrices.map((p) => (
+                  <div key={p.id} className="flex justify-between gap-2 text-sm border border-line rounded-xl p-3">
+                    <div><strong>{p.service_type}</strong><span className="text-zinc-400"> · {fmtRp(p.unit_price)} / {p.unit}</span></div>
+                    <div className="flex gap-2 shrink-0">
+                      <button type="button" onClick={() => setPriceForm({ id: p.id, service_type: p.service_type, unit: p.unit, unit_price: String(p.unit_price) })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
+                      <button type="button" onClick={() => deletePrice(p.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="border-t border-line pt-4">
               <h3 className="font-bold mb-1">Aplikasi</h3>
               {isInstalled ? (

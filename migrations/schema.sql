@@ -52,3 +52,15 @@ CREATE TABLE IF NOT EXISTS job_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_job_items_job ON job_items(job_id);
+
+-- Daftar harga jasa (preset): satu nama jasa = satu satuan + harga satuan.
+-- Dipakai form transaksi untuk mengisi harga otomatis; transaksi yang
+-- sudah tersimpan tidak ikut berubah bila harga preset diubah.
+CREATE TABLE IF NOT EXISTS service_prices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  service_type TEXT NOT NULL,
+  unit TEXT NOT NULL DEFAULT '',
+  unit_price INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

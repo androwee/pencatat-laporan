@@ -465,6 +465,61 @@ export async function handleApi(request, env) {
       }
     }
 
+    // ---- Daftar harga jasa (preset harga satuan) ----
+    // Satu nama jasa = satu harga satuan + satuan. Dipakai form transaksi
+    // untuk mengisi harga otomatis; nama dicocokkan tanpa memperhatikan
+    // huruf besar/kecil supaya "Sedot WC" dan "sedot wc" tidak ganda.
+    async function ensureServicePricesTable(env) {
+      await qRun(env, "CREATE TABLE IF NOT EXISTS service_prices (id INTEGER PRIMARY KEY AUTOINCREMENT, service_type TEXT NOT NULL, unit TEXT NOT NULL DEFAULT '', unit_price INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+    }
+    if (path === "/api/service-prices" && method === "GET") {
+      await ensureServicePricesTable(env);
+      const rows = await qAll(env, "SELECT * FROM service_prices ORDER BY service_type ASC");
+      return json({ prices: rows });
+    }
+    if (path === "/api/service-prices" && method === "POST") {
+      await ensureServicePricesTable(env);
+      const body = await readJson(request);
+      const serviceType = (body?.service_type || "").trim();
+      const unit = (body?.unit || "").trim();
+      const unitPrice = Number(body?.unit_price);
+      if (!serviceType || serviceType.length > 100) return json({ error: "Nama jasa wajib diisi." }, 400);
+      if (!ITEM_UNITS.includes(unit)) return json({ error: "Satuan tidak valid (kubik/strip/pcs/paket)." }, 400);
+      if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) return json({ error: "Harga satuan harus angka >= 0." }, 400);
+      const now = new Date().toISOString();
+      const existing = await qFirst(env, "SELECT * FROM service_prices WHERE LOWER(service_type) = LOWER(?)", serviceType);
+      if (existing) {
+        await qRun(env, "UPDATE service_prices SET service_type = ?, unit = ?, unit_price = ?, updated_at = ? WHERE id = ?", serviceType, unit, unitPrice, now, existing.id);
+        return json({ price: await qFirst(env, "SELECT * FROM service_prices WHERE id = ?", existing.id) });
+      }
+      const res = await qRun(env, "INSERT INTO service_prices (service_type, unit, unit_price, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", serviceType, unit, unitPrice, now, now);
+      return json({ price: await qFirst(env, "SELECT * FROM service_prices WHERE id = ?", res.meta.last_row_id) }, 201);
+    }
+    const priceIdMatch = path.match(/^\/api\/service-prices\/(\d+)$/);
+    if (priceIdMatch) {
+      await ensureServicePricesTable(env);
+      const id = Number(priceIdMatch[1]);
+      if (method === "PUT") {
+        const body = await readJson(request);
+        const serviceType = (body?.service_type || "").trim();
+        const unit = (body?.unit || "").trim();
+        const unitPrice = Number(body?.unit_price);
+        if (!serviceType || serviceType.length > 100) return json({ error: "Nama jasa wajib diisi." }, 400);
+        if (!ITEM_UNITS.includes(unit)) return json({ error: "Satuan tidak valid (kubik/strip/pcs/paket)." }, 400);
+        if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) return json({ error: "Harga satuan harus angka >= 0." }, 400);
+        const clash = await qFirst(env, "SELECT * FROM service_prices WHERE LOWER(service_type) = LOWER(?) AND id != ?", serviceType, id);
+        if (clash) return json({ error: "Nama jasa sudah ada di daftar harga." }, 400);
+        await qRun(env, "UPDATE service_prices SET service_type = ?, unit = ?, unit_price = ?, updated_at = ? WHERE id = ?", serviceType, unit, unitPrice, new Date().toISOString(), id);
+        const row = await qFirst(env, "SELECT * FROM service_prices WHERE id = ?", id);
+        if (!row) return json({ error: "Harga jasa tidak ditemukan." }, 404);
+        return json({ price: row });
+      }
+      if (method === "DELETE") {
+        await qRun(env, "DELETE FROM service_prices WHERE id = ?", id);
+        return json({ ok: true });
+      }
+    }
+
     // ---- Laporan pemasukan ----
     if (path === "/api/reports" && method === "GET") {
       const period = url.searchParams.get("period") || "monthly";
