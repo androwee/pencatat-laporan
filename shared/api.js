@@ -264,7 +264,7 @@ export async function handleApi(request, env) {
       }
       const body = await readJson(request);
       if (!body) return json({ error: "Body JSON tidak valid." }, 400);
-      const allowed = ["business_name", "business_address", "business_phone", "business_website", "business_logo"];
+      const allowed = ["business_name", "business_address", "business_phone", "business_website", "business_logo", "bank_name", "bank_account_number", "bank_account_holder"];
       for (const key of allowed) {
         if (key in body) {
           const value = String(body[key] || "").trim();

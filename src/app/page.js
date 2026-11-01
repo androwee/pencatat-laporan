@@ -114,7 +114,7 @@ export default function Home() {
   const [selectedJobs, setSelectedJobs] = useState([]);
   const [detailJob, setDetailJob] = useState(null);
   const [settings, setSettings] = useState({});
-  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "" });
+  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "" });
   const [settingsSaved, setSettingsSaved] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -423,6 +423,9 @@ export default function Home() {
       business_phone: settings.business_phone || "",
       business_website: settings.business_website || "",
       business_logo: settings.business_logo || "",
+      bank_name: settings.bank_name || "",
+      bank_account_number: settings.bank_account_number || "",
+      bank_account_holder: settings.bank_account_holder || "",
     });
     setSettingsSaved("");
     setShowSettingsModal(true);
@@ -491,7 +494,10 @@ export default function Home() {
       ? job.items
       : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: job.amount, amount: job.amount }];
     const lines = items.map((it) => `- ${it.service_type} (${fmtQty(it.qty)} ${it.unit}) @ ${fmtRp(it.unit_price)} = ${fmtRp(it.amount)}`).join("\n");
-    const msg = `${businessName}\nINVOICE ${invNo}\nTanggal: ${job.job_date}\nPelanggan: ${job.customer_name}\n\n${lines}\n\nTotal: ${fmtRp(job.amount)}\nStatus: ${statusLabel}\n\nTerima kasih.`;
+    const bankLine = settings.bank_name && settings.bank_account_number
+      ? `\nPembayaran: ${settings.bank_name} ${settings.bank_account_number}${settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}`
+      : "";
+    const msg = `${businessName}\nINVOICE ${invNo}\nTanggal: ${job.job_date}\nPelanggan: ${job.customer_name}\n\n${lines}\n\nTotal: ${fmtRp(job.amount)}\nStatus: ${statusLabel}${bankLine}\n\nTerima kasih.`;
     const filename = `invoice-${job.id}-${job.job_date}.pdf`;
     // 1. Utamakan kirim file PDF langsung lewat lembar berbagi perangkat
     // (Web Share API, didukung Chrome Android). Di lembar berbagi, pilih
@@ -585,6 +591,12 @@ export default function Home() {
           ? "Status pembayaran: DP. Nominal di atas adalah total jasa; sisa pembayaran sesuai kesepakatan."
           : "Status pembayaran: Belum bayar. Mohon selesaikan pembayaran.";
       doc.splitTextToSize(note, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
+      if (settings.bank_name && settings.bank_account_number) {
+        y += 2; doc.setFont("helvetica", "bold");
+        const bankLine = `Pembayaran via transfer: ${settings.bank_name} ${settings.bank_account_number}${settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}`;
+        doc.splitTextToSize(bankLine, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
+        doc.setFont("helvetica", "normal");
+      }
       y += 6;
       doc.setFontSize(10); doc.text("Invoice ini dibuat dari aplikasi Pencatat Laporan.", 14, y);
       return doc;
@@ -673,7 +685,6 @@ export default function Home() {
 
   return (
     <main className="max-w-5xl mx-auto px-4 pt-4 pb-32">
-      <div className="p5-dots h-2 opacity-40 rounded-full mb-4" aria-hidden="true" />
       <header className="flex justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <AppLogo size={44} theme={theme} />
@@ -1088,7 +1099,7 @@ export default function Home() {
             </div>
             <form onSubmit={saveSettings} className="border-t border-line pt-4 space-y-3">
               <h3 className="font-bold">Informasi Usaha</h3>
-              <p className="text-sm text-zinc-400">Ditampilkan di header invoice PDF. Kosongkan bila belum ada.</p>
+              <p className="text-sm text-zinc-400">Ditampilkan di invoice PDF. Kosongkan bila belum ada.</p>
               <label className="block text-sm font-medium">Nama usaha / jasa
                 <input className="mt-1" value={settingsForm.business_name} onChange={(e) => setSettingsForm({ ...settingsForm, business_name: e.target.value })} placeholder="cth: Jasa Sedot WC Andro" />
               </label>
@@ -1101,6 +1112,21 @@ export default function Home() {
               <label className="block text-sm font-medium">Website
                 <input className="mt-1" inputMode="url" value={settingsForm.business_website} onChange={(e) => setSettingsForm({ ...settingsForm, business_website: e.target.value })} placeholder="https://…" />
               </label>
+              <div className="space-y-3 pt-2">
+                <h4 className="font-bold">Rekening Bank</h4>
+                <p className="text-sm text-zinc-400 -mt-1">Ditampilkan di invoice agar pelanggan bisa transfer langsung tanpa kamu kirim nomor rekening manual lagi. Kosongkan bila belum ada.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-sm font-medium">Bank
+                    <input className="mt-1" value={settingsForm.bank_name} onChange={(e) => setSettingsForm({ ...settingsForm, bank_name: e.target.value })} placeholder="cth: BCA" />
+                  </label>
+                  <label className="block text-sm font-medium">Nomor rekening
+                    <input className="mt-1" inputMode="numeric" value={settingsForm.bank_account_number} onChange={(e) => setSettingsForm({ ...settingsForm, bank_account_number: e.target.value })} placeholder="cth: 1234567890" />
+                  </label>
+                </div>
+                <label className="block text-sm font-medium">Atas nama
+                  <input className="mt-1" value={settingsForm.bank_account_holder} onChange={(e) => setSettingsForm({ ...settingsForm, bank_account_holder: e.target.value })} placeholder="cth: Andri Susilo" />
+                </label>
+              </div>
               <div>
                 <p className="text-sm font-medium mb-2">Logo perusahaan <span className="text-zinc-400 font-normal">— tampil di kop invoice</span></p>
                 {settingsForm.business_logo && (
