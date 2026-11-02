@@ -1069,8 +1069,10 @@ export default function Home() {
                 <p className="text-xs text-zinc-400 px-3 py-2">Login sebagai {username}</p>
                 <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("profil"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Profil</button>
                 <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("pengaturan"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Pengaturan</button>
-                <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("aplikasi"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Aplikasi</button>
                 <div className="border-t border-line my-1" />
+                {!isInstalled && (
+                  <button type="button" onClick={() => { setShowProfileMenu(false); if (installPrompt) installApp(); else openSettings("aplikasi"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Install aplikasi</button>
+                )}
                 <button type="button" onClick={handleLogout} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm text-red-500 hover:bg-zinc-800">Keluar</button>
               </div>
             </>
