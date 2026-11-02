@@ -113,6 +113,7 @@ export default function Home() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState("profil");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [installHelp, setInstallHelp] = useState(false);
   const [theme, setTheme] = useState("dark");
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedJobs, setSelectedJobs] = useState([]);
@@ -288,8 +289,11 @@ export default function Home() {
       (typeof window !== "undefined" && window.matchMedia("(display-mode: standalone)").matches) ||
       (typeof window !== "undefined" && window.navigator.standalone === true));
     checkInstalled();
+    // Bila prompt install sudah ditangkap skrip awal sebelum React
+    // sempat pasang listener (mis. di HP lambat), pakai hasil tangkapan itu.
+    if (typeof window !== "undefined" && window.__pencatatInstallPrompt) setInstallPrompt(window.__pencatatInstallPrompt);
     const onBeforeInstall = (e) => { e.preventDefault(); setInstallPrompt(e); };
-    const onInstalled = () => { setIsInstalled(true); setInstallPrompt(null); };
+    const onInstalled = () => { setIsInstalled(true); setInstallPrompt(null); if (typeof window !== "undefined") window.__pencatatInstallPrompt = null; };
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onInstalled);
     return () => {
@@ -305,6 +309,7 @@ export default function Home() {
       await installPrompt.userChoice;
     } catch {}
     setInstallPrompt(null);
+    if (typeof window !== "undefined") window.__pencatatInstallPrompt = null;
   };
 
   const applyTheme = (next) => {
@@ -1052,7 +1057,7 @@ export default function Home() {
               ? icon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
               : icon(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)}
           </button>
-          <button onClick={() => setShowProfileMenu((v) => !v)} aria-label="Menu profil" aria-expanded={showProfileMenu}
+          <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
             className="w-11 h-11 rounded-full overflow-hidden shrink-0 border border-line bg-panel flex items-center justify-center">
             {settings.business_logo ? (
               <img src={settings.business_logo} alt="Logo perusahaan" className="w-full h-full object-cover" />
@@ -1064,14 +1069,20 @@ export default function Home() {
           </button>
           {showProfileMenu && (
             <>
-              <button aria-label="Tutup menu profil" onClick={() => setShowProfileMenu(false)} className="fixed inset-0 z-40 cursor-default" />
+              <button aria-label="Tutup menu profil" onClick={() => { setInstallHelp(false); setShowProfileMenu(false); }} className="fixed inset-0 z-40 cursor-default" />
               <div className="absolute right-0 top-full mt-2 w-56 bg-panel border border-line rounded-2xl shadow-2xl p-2 z-50">
                 <p className="text-xs text-zinc-400 px-3 py-2">Login sebagai {username}</p>
                 <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("profil"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Profil</button>
                 <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("pengaturan"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Pengaturan</button>
                 <div className="border-t border-line my-1" />
-                {!isInstalled && (
-                  <button type="button" onClick={() => { setShowProfileMenu(false); if (installPrompt) installApp(); else openSettings("aplikasi"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Install aplikasi</button>
+                <button type="button" disabled={isInstalled}
+                  onClick={() => {
+                    if (installPrompt) { setShowProfileMenu(false); setInstallHelp(false); installApp(); }
+                    else setInstallHelp(true);
+                  }}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm ${isInstalled ? "text-zinc-500 opacity-40" : "hover:bg-zinc-800"}`}>Install aplikasi</button>
+                {installHelp && !installPrompt && (
+                  <p className="text-xs text-zinc-400 px-3 pb-2">Browser belum menawarkan install. Di Chrome Android: ketuk ⋮ lalu "Tambahkan ke Layar Utama" atau "Install aplikasi". Di iPhone: ketuk Bagikan lalu "Tambah ke Layar Utama".</p>
                 )}
                 <button type="button" onClick={handleLogout} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm text-red-500 hover:bg-zinc-800">Keluar</button>
               </div>
@@ -1584,7 +1595,7 @@ export default function Home() {
       {showSettingsModal && (
         <Modal title="Profil & Pengaturan" onClose={() => setShowSettingsModal(false)}>
           <div className="flex gap-1 border-b border-line overflow-x-auto">
-            {[["profil", "Profil"], ["pengaturan", "Pengaturan"], ["aplikasi", "Aplikasi"]].map(([key, label]) => (
+            {[["profil", "Profil"], ["pengaturan", "Pengaturan"]].map(([key, label]) => (
               <button key={key} type="button" onClick={() => setSettingsTab(key)}
                 className={`px-3 py-2 text-sm font-bold whitespace-nowrap border-b-2 -mb-px ${settingsTab === key ? "text-red-500 border-persona" : "text-zinc-400 border-transparent"}`}>{label}</button>
             ))}
@@ -1696,21 +1707,6 @@ export default function Home() {
               {backupMessage && <p className="text-sm text-emerald-400">{backupMessage}</p>}
             </div>
             </>)}
-            {settingsTab === "aplikasi" && (
-            <div>
-              <h3 className="font-bold mb-1">Aplikasi</h3>
-              {isInstalled ? (
-                <p className="text-sm text-zinc-400">Aplikasi sudah terinstall di perangkat ini, bisa dibuka dari layar utama tanpa browser.</p>
-              ) : installPrompt ? (
-                <div className="flex flex-wrap items-center gap-3">
-                  <button onClick={installApp} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold text-sm">Install aplikasi</button>
-                  <span className="text-sm text-zinc-400">Pasang sebagai aplikasi di layar utama.</span>
-                </div>
-              ) : (
-                <p className="text-sm text-zinc-400">Bila tombol install belum muncul: di Chrome Android ketuk ⋮ lalu "Tambahkan ke Layar Utama" atau "Install aplikasi". Di iPhone: ketuk Bagikan lalu "Tambah ke Layar Utama".</p>
-              )}
-            </div>
-            )}
           </div>
         </Modal>
       )}
