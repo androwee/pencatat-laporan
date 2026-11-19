@@ -1467,7 +1467,7 @@ export default function Home() {
                 <h2 className="font-black text-xl sm:text-2xl leading-tight">{activeBusiness?.name || settings.business_name || username}</h2>
                 <p className="text-xs mt-1">{todayLabel}</p>
               </div>
-              <button onClick={() => openJobModal(null)} className="bg-white text-sky-700 font-bold px-4 py-2.5 rounded-full text-sm shrink-0 shadow transition-transform duration-150 active:scale-[0.97]">+ Tambah transaksi</button>
+              <button onClick={() => openJobModal(null)} className="bg-white text-sky-700 font-bold px-4 py-3 rounded-full text-sm shrink-0 shadow transition-transform duration-150 active:scale-[0.97]">+ Tambah transaksi</button>
             </div>
             <div className="mt-5">
               <p className="text-sm">Pemasukan bulan ini</p>
