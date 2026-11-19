@@ -63,7 +63,7 @@ function Modal({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-label={title}>
       <button aria-label="Tutup" onClick={onClose} className="absolute inset-0 bg-black/70" />
-      <div className="relative bg-panel border border-line rounded-t-3xl sm:rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-5 shadow-2xl">
+      <div className="relative bg-panel border border-line rounded-t-3xl sm:rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl">
         <div className="flex justify-between items-start gap-3 mb-4">
           <h2 className="font-bold text-lg">{title}</h2>
           <button onClick={onClose} aria-label="Tutup popup" className="bg-zinc-800 w-9 h-9 rounded-full font-bold shrink-0">×</button>
@@ -1430,7 +1430,7 @@ export default function Home() {
   return (
     <>
         <header className="w-full text-white rounded-b-[28px]" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
-          <div className={"max-w-5xl mx-auto px-4 flex items-center gap-3 " + (tab === "dashboard" ? "pt-3 pb-20" : "py-3")}>
+          <div className={"max-w-5xl mx-auto px-4 flex items-center gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] " + (tab === "dashboard" ? "pb-20" : "pb-3")}>
             <div className="relative shrink-0">
               <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
                 className="w-11 h-11 rounded-full overflow-hidden border-2 border-white/60 bg-white/15 flex items-center justify-center">
@@ -2402,7 +2402,7 @@ export default function Home() {
 
       {offerEditField && offerForm && (
         <div className="fixed inset-0 z-[70] bg-panel flex flex-col" role="dialog" aria-modal="true" aria-label={offerEditField.label}>
-          <div className="flex justify-between items-center gap-3 p-4 border-b border-line shrink-0">
+          <div className="flex justify-between items-center gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))] border-b border-line shrink-0">
             <h2 className="font-bold text-lg">{offerEditField.label}</h2>
             <button onClick={() => setOfferEditField(null)} aria-label="Tutup editor" className="bg-zinc-800 w-9 h-9 rounded-full font-bold shrink-0">×</button>
           </div>
@@ -2415,7 +2415,7 @@ export default function Home() {
               autoFocus
             />
           </div>
-          <div className="p-4 pt-0 shrink-0">
+          <div className="p-4 pt-0 pb-[max(1rem,env(safe-area-inset-bottom))] shrink-0">
             <button onClick={() => setOfferEditField(null)} className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Selesai</button>
           </div>
         </div>
@@ -2499,7 +2499,7 @@ export default function Home() {
         </Modal>
       )}
 
-      <nav className="fixed left-1/2 -translate-x-1/2 bottom-4 z-50 flex items-end gap-1 bg-panel border border-line rounded-full px-1.5 py-1.5 shadow-2xl shadow-black/60 w-[calc(100vw-24px)] max-w-md" aria-label="Navigasi utama">
+      <nav className="fixed left-1/2 -translate-x-1/2 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex items-end gap-1 bg-panel border border-line rounded-full px-1.5 py-1.5 shadow-2xl shadow-black/60 w-[calc(100vw-24px)] max-w-md" aria-label="Navigasi utama">
         {dockBtn("dashboard", "Dashboard", icon(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>))}
         {dockBtn("customers", "Pelanggan", icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>))}
         <button onClick={handleAddNew} aria-label="Tambah catatan baru"
