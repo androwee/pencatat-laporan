@@ -239,6 +239,62 @@ export default function Home() {
     try { const data = await api("/api/service-prices"); setServicePrices(data.prices || []); } catch (e) { /* daftar harga opsional, abaikan */ }
   }, []);
 
+  // ---- Bootstrap: satu panggilan untuk semua data awal, plus cache
+  // lokal supaya laporan langsung tampil saat aplikasi dibuka (data
+  // terakhir yang tersimpan), lalu disegarkan dari server di belakang.
+  const BOOTSTRAP_CACHE_KEY = "pencatat-bootstrap";
+  const readBootstrapCache = () => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(BOOTSTRAP_CACHE_KEY) || "null");
+      if (!parsed || !parsed.data || !parsed.businessId) return null;
+      return parsed;
+    } catch { return null; }
+  };
+  const writeBootstrapCache = (businessId, data) => {
+    try { localStorage.setItem(BOOTSTRAP_CACHE_KEY, JSON.stringify({ businessId: String(businessId), savedAt: Date.now(), data })); } catch { /* penyimpanan penuh: abaikan */ }
+  };
+  const clearBootstrapCache = () => { try { localStorage.removeItem(BOOTSTRAP_CACHE_KEY); } catch {} };
+
+  // Isi semua state tampilan awal dari satu payload bootstrap
+  // (dipakai untuk cache lokal maupun hasil fetch segar).
+  const applyBootstrapData = useCallback((data) => {
+    if (!data || !data.business) return;
+    const cust = data.customers || [];
+    const allJobs = data.jobs || [];
+    setUsername(data.username || "");
+    setAuthKind(data.auth || "");
+    setBusinesses(data.businesses || []);
+    setActiveBusiness(data.business);
+    setCustomers(cust);
+    setJobs(allJobs);
+    setSettings(data.settings || {});
+    setSettingsForm({
+      business_name: data.settings?.business_name || "",
+      business_address: data.settings?.business_address || "",
+      business_phone: data.settings?.business_phone || "",
+      business_website: data.settings?.business_website || "",
+      business_logo: data.settings?.business_logo || "",
+    });
+    setServicePrices(data.prices || []);
+    const trend = groupByDate(allJobs);
+    const outstandingJobs = allJobs.filter((j) => j.status !== "lunas" && Math.max(0, Number(j.amount) - Number(j.paid_amount || 0)) > 0);
+    setDash({
+      today: Number(data.totals?.daily?.total || 0),
+      month: Number(data.totals?.monthly?.total || 0),
+      customers: cust.length, jobs: allJobs.length,
+      outstanding: outstandingJobs.reduce((s, j) => s + Math.max(0, Number(j.amount) - Number(j.paid_amount || 0)), 0),
+      outstandingCount: outstandingJobs.length,
+      schedules: cust.filter((c) => c.next_visit_date).sort((a, b) => (a.next_visit_date < b.next_visit_date ? -1 : 1)),
+      recent: allJobs.slice(0, 10),
+      trendDates: trend.dates.slice(-10), trendValues: trend.values.slice(-10),
+      status: statusParts({
+        total_lunas: allJobs.filter((j) => j.status === "lunas").reduce((s, j) => s + Number(j.amount), 0),
+        total_dp: allJobs.filter((j) => j.status === "dp").reduce((s, j) => s + Number(j.amount), 0),
+        total_belum: allJobs.filter((j) => j.status === "belum").reduce((s, j) => s + Number(j.amount), 0),
+      }),
+    });
+  }, []);
+
   const submitPrice = async (e) => {
     e.preventDefault();
     try {
@@ -280,25 +336,39 @@ export default function Home() {
 
   useEffect(() => {
     (async () => {
-      try {
-        const me = await api("/api/me");
-        setUsername(me.username);
-        setAuthKind(me.auth || "");
-        const list = me.businesses || [];
-        setBusinesses(list);
-        if (!list.length) { setView("onboarding"); return; }
-        const stored = storedBusinessId();
-        const active = list.find((b) => String(b.id) === String(stored)) || list[0];
-        try { localStorage.setItem(BUSINESS_KEY, String(active.id)); } catch {}
-        setActiveBusiness(active);
+      // Tampilkan data terakhir yang tersimpan di perangkat dulu supaya
+      // laporan langsung muncul, lalu segarkan dari server di belakang.
+      const stored = storedBusinessId();
+      const cached = readBootstrapCache();
+      const cacheUsable = cached && (!stored || String(cached.businessId) === String(stored));
+      if (cacheUsable) {
+        applyBootstrapData(cached.data);
         setView("app");
-        loadDashboard();
-        loadCustomers();
-        loadSettings();
-        loadServicePrices();
-      } catch { setView("login"); }
+      }
+      try {
+        let data = await api("/api/bootstrap");
+        if (!data.business && (data.businesses || []).length > 1) {
+          const active = (data.businesses || []).find((b) => String(b.id) === String(stored)) || data.businesses[0];
+          try { localStorage.setItem(BUSINESS_KEY, String(active.id)); } catch {}
+          data = await api("/api/bootstrap");
+        }
+        if (!data.business) { setView("onboarding"); return; }
+        try { localStorage.setItem(BUSINESS_KEY, String(data.business.id)); } catch {}
+        applyBootstrapData(data);
+        writeBootstrapCache(data.business.id, data);
+        setView("app");
+      } catch (e) {
+        if (String(e?.message || "").includes("Belum login")) {
+          clearBootstrapCache();
+          setView("login");
+        } else if (!cacheUsable) {
+          setView("login");
+        }
+        // Gagal jaringan tapi ada cache: biarkan cache tampil, data
+        // disegarkan saat aplikasi dibuka berikutnya.
+      }
     })();
-  }, [loadDashboard, loadCustomers, loadSettings, loadServicePrices]);
+  }, [applyBootstrapData]);
 
   useEffect(() => { if (tab === "customers") loadCustomers(search); }, [search, tab, loadCustomers]);
 
@@ -349,6 +419,7 @@ export default function Home() {
   const handleLogout = async () => {
     await api("/api/logout", { method: "POST" }).catch(() => {});
     try { localStorage.removeItem(BUSINESS_KEY); } catch {}
+    clearBootstrapCache();
     location.reload();
   };
 

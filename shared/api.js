@@ -109,7 +109,18 @@ function sessionCookie(token, maxAge) {
 
 // ---- Multi-tenant: users, businesses, business_id ----
 
+// Hasil ensure hanya perlu dihitung sekali per isolate Worker: isolate
+// dipakai ulang antar request, jadi request hangat tidak perlu mengulang
+// CREATE/ALTER/SELECT migrasi (~9 round trip D1) di tiap panggilan API.
+// Bila ensure gagal di tengah jalan, flag tidak diset sehingga request
+// berikutnya mencoba lagi.
+let ensuredMultiTenant = false;
+let ensuredNextVisit = false;
+let ensuredPaidAmount = false;
+let ensuredJobItems = false;
+
 async function ensureMultiTenant(env) {
+  if (ensuredMultiTenant) return;
   await qRun(env, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, google_sub TEXT UNIQUE, email TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', picture TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)");
   await qRun(env, "CREATE TABLE IF NOT EXISTS businesses (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_user_id INTEGER, legacy INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', logo TEXT NOT NULL DEFAULT '', bank_name TEXT NOT NULL DEFAULT '', bank_account_number TEXT NOT NULL DEFAULT '', bank_account_holder TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
   for (const table of ["customers", "jobs", "service_prices"]) {
@@ -138,6 +149,7 @@ async function ensureMultiTenant(env) {
       }
     }
   }
+  ensuredMultiTenant = true;
 }
 
 // Usaha-usaha yang boleh diakses identitas ini.
@@ -335,8 +347,10 @@ function itemsSummary(items) {
 }
 
 async function ensureJobItemsTable(env) {
+  if (ensuredJobItems) return;
   await qRun(env, "CREATE TABLE IF NOT EXISTS job_items (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL REFERENCES jobs(id), service_type TEXT NOT NULL, qty REAL NOT NULL DEFAULT 1, unit TEXT NOT NULL DEFAULT '', unit_price INTEGER NOT NULL DEFAULT 0, amount INTEGER NOT NULL DEFAULT 0)");
   await qRun(env, "CREATE INDEX IF NOT EXISTS idx_job_items_job ON job_items(job_id)");
+  ensuredJobItems = true;
 }
 
 // Kolom paid_amount (sudah dibayar) ditambahkan ke jobs yang sudah ada
@@ -344,14 +358,18 @@ async function ensureJobItemsTable(env) {
 // dianggap sudah dibayar penuh, karena status adalah satu-satunya bukti
 // pembayaran yang tercatat untuk data lama tersebut.
 async function ensurePaidAmountColumn(env) {
+  if (ensuredPaidAmount) return;
   try { await qRun(env, "ALTER TABLE jobs ADD COLUMN paid_amount INTEGER NOT NULL DEFAULT 0"); } catch {}
   try { await qRun(env, "UPDATE jobs SET paid_amount = amount WHERE status = 'lunas' AND (paid_amount IS NULL OR paid_amount = 0)"); } catch {}
+  ensuredPaidAmount = true;
 }
 
 // Jadwal kunjungan berikutnya per pelanggan (kolom di customers, NULL =
 // tidak ada jadwal). Migrasi idempotent seperti paid_amount.
 async function ensureNextVisitColumn(env) {
+  if (ensuredNextVisit) return;
   try { await qRun(env, "ALTER TABLE customers ADD COLUMN next_visit_date TEXT"); } catch {}
+  ensuredNextVisit = true;
 }
 
 function validatePaidAmount(paidRaw, amount) {
@@ -504,6 +522,65 @@ export async function handleApi(request, env) {
         email: identity.kind === "google" ? identity.email : "",
         name: identity.kind === "google" ? (identity.name || "") : "",
         businesses: businesses.map((b) => ({ id: b.id, name: b.name })),
+      });
+    }
+
+    // ---- Bootstrap: semua yang dibutuhkan tampilan pertama dalam SATU
+    // panggilan (profil + pelanggan + transaksi + harga + total harian &
+    // bulanan). Sebelumnya halaman awal menembak 8 endpoint terpisah
+    // (/api/me dulu, lalu 2x reports + customers + jobs + settings +
+    // service-prices), masing-masing membayar biaya ensure migrasi dan
+    // round trip D1 sendiri — itu yang membuat laporan baru muncul
+    // setelah beberapa detik. Query di sini jalan paralel (Promise.all).
+    if (path === "/api/bootstrap" && method === "GET") {
+      const businesses = await listBusinessesFor(env, identity);
+      const base = {
+        username: identity.kind === "google" ? identity.email : identity.username,
+        auth: identity.kind,
+        email: identity.kind === "google" ? identity.email : "",
+        name: identity.kind === "google" ? (identity.name || "") : "",
+        businesses: businesses.map((b) => ({ id: b.id, name: b.name })),
+      };
+      const rawBid = url.searchParams.get("business_id") || request.headers.get("x-business-id") || "";
+      let business = null;
+      if (rawBid) {
+        business = businesses.find((b) => b.id === Number(rawBid)) || null;
+        if (!business) return json({ error: "Usaha tidak ditemukan atau bukan milik Anda." }, 403);
+      } else if (businesses.length === 1) {
+        business = businesses[0];
+      }
+      if (!business) return json({ ...base, business: null });
+      const bid = business.id;
+      const today = todayId();
+      const month = today.slice(0, 7);
+      const { from: mFrom, to: mTo } = monthRange(month);
+      const totalsSql = `SELECT COUNT(*) AS count,
+                COALESCE(SUM(amount), 0) AS total,
+                COALESCE(SUM(CASE WHEN status = 'lunas' THEN amount ELSE 0 END), 0) AS total_lunas,
+                COALESCE(SUM(CASE WHEN status = 'dp' THEN amount ELSE 0 END), 0) AS total_dp,
+                COALESCE(SUM(CASE WHEN status = 'belum' THEN amount ELSE 0 END), 0) AS total_belum
+         FROM jobs WHERE business_id = ? AND job_date BETWEEN ? AND ?`;
+      const [customers, jobsRaw, prices, dailyTotals, monthlyTotals] = await Promise.all([
+        (async () => { await ensureNextVisitColumn(env); return qAll(env, "SELECT * FROM customers WHERE business_id = ? ORDER BY name COLLATE NOCASE ASC LIMIT 500", bid); })(),
+        (async () => {
+          await ensurePaidAmountColumn(env);
+          return qAll(env, `SELECT j.*, c.name AS customer_name, c.phone AS customer_phone
+                 FROM jobs j JOIN customers c ON c.id = j.customer_id WHERE j.business_id = ?
+                 ORDER BY j.job_date DESC, j.id DESC LIMIT 1000`, bid);
+        })(),
+        qAll(env, "SELECT * FROM service_prices WHERE business_id = ? ORDER BY service_type ASC", bid),
+        qFirst(env, totalsSql, bid, today, today),
+        qFirst(env, totalsSql, bid, mFrom, mTo),
+      ]);
+      const jobs = await attachJobItems(env, jobsRaw);
+      return json({
+        ...base,
+        business: { id: business.id, name: business.name, ...businessSettings(business) },
+        settings: businessSettings(business),
+        customers,
+        jobs,
+        prices,
+        totals: { daily: dailyTotals, monthly: monthlyTotals },
       });
     }
 
