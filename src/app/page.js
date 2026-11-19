@@ -118,6 +118,7 @@ export default function Home() {
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedJobs, setSelectedJobs] = useState([]);
   const [detailJob, setDetailJob] = useState(null);
+  const [invoicePreview, setInvoicePreview] = useState(null);
   const [historyCustomer, setHistoryCustomer] = useState(null);
   const [historyJobs, setHistoryJobs] = useState(null);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
@@ -872,6 +873,21 @@ export default function Home() {
       }
       y += 6;
       doc.setFontSize(10); doc.text("Invoice ini dibuat dari aplikasi Pencatat Laporan.", 14, y);
+      // Watermark LUNAS: hanya untuk transaksi lunas, miring dari pojok
+      // ke pojok (diagonal halaman A4), di atas isi invoice.
+      if (job.status === "lunas") {
+        try { doc.setGState(new doc.GState({ opacity: 0.13 })); } catch { /* jsPDF tanpa GState: lanjut dengan warna merah */ }
+        doc.setTextColor(230, 0, 18);
+        doc.setFont("helvetica", "bold");
+        let wmSize = 90;
+        doc.setFontSize(wmSize);
+        const wmWidth = doc.getTextWidth("LUNAS") || 1;
+        wmSize = Math.min(280, Math.max(60, wmSize * 330 / wmWidth));
+        doc.setFontSize(wmSize);
+        doc.text("LUNAS", 105, 148.5, { align: "center", angle: -54.7 });
+        try { doc.setGState(new doc.GState({ opacity: 1 })); } catch { /* abaikan */ }
+        doc.setTextColor(0, 0, 0);
+      }
       return doc;
   };
 
@@ -880,6 +896,19 @@ export default function Home() {
       const doc = await buildInvoiceDoc(job);
       doc.save(`invoice-${job.id}-${job.job_date}.pdf`);
     } catch (err) { setError(`Gagal membuat invoice: ${err.message}`); }
+  };
+
+  const previewInvoice = async (job) => {
+    try {
+      const doc = await buildInvoiceDoc(job);
+      const url = doc.output("bloburl");
+      setInvoicePreview({ url, job });
+    } catch (err) { setError(`Gagal membuat preview invoice: ${err.message}`); }
+  };
+
+  const closeInvoicePreview = () => {
+    if (invoicePreview?.url) { try { URL.revokeObjectURL(invoicePreview.url); } catch { /* abaikan */ } }
+    setInvoicePreview(null);
   };
 
   const markJobPaid = async (job, after) => {
@@ -1814,6 +1843,10 @@ export default function Home() {
               <button onClick={() => markJobPaid(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tandai lunas (sisa {fmtRp(remainingOf(detailJob))})</button>
             )}
             <button onClick={() => { const j = detailJob; setDetailJob(null); duplicateJob(j); }} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Ulangi transaksi</button>
+            <button onClick={() => previewInvoice(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+              Preview Invoice
+            </button>
             <div className="grid grid-cols-3 gap-2">
               <button onClick={() => downloadInvoice(detailJob)} aria-label="Unduh Invoice (PDF)" title="Unduh Invoice (PDF)" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
@@ -1828,6 +1861,19 @@ export default function Home() {
           </div>
           <p className="text-xs text-zinc-400 mt-3">Kirim via WhatsApp membagikan file PDF invoice langsung (di HP Android, pilih WhatsApp di lembar berbagi lalu pilih kontak pelanggan). Bila browser tidak mendukung berbagi file, tombol ini membuka chat wa.me ke nomor WA pelanggan dengan pesan teks invoice — wa.me tidak bisa melampirkan file, jadi dalam kasus itu unduh dulu PDF-nya lalu lampirkan manual.</p>
           <p className="text-xs text-zinc-400 mt-3">Header invoice memakai informasi usaha dari Pengaturan (tombol profil di atas). Isi dulu di sana bila nama/alamat/telepon/website usaha belum tampil di invoice.</p>
+        </Modal>
+      )}
+
+      {invoicePreview && (
+        <Modal title="Preview Invoice" onClose={closeInvoicePreview}>
+          <div className="border border-line rounded-xl overflow-hidden bg-white">
+            <iframe src={invoicePreview.url} title="Preview Invoice" className="w-full h-[65vh] bg-white" />
+          </div>
+          <div className="mt-4 space-y-2">
+            <button onClick={() => downloadInvoice(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
+            <button onClick={() => { const j = invoicePreview.job; closeInvoicePreview(); sendInvoiceWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">Kirim via WhatsApp</button>
+            <button onClick={closeInvoicePreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tutup preview</button>
+          </div>
         </Modal>
       )}
 
