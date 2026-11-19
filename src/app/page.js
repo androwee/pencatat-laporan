@@ -46,10 +46,12 @@ function Card({ title, children, wide }) {
 function Stat({ label, value, icon }) {
   return (
     <div className="bg-panel border border-line rounded-2xl p-4 flex items-center gap-3">
-      <span className="w-11 h-11 rounded-2xl bg-sky-500/10 text-sky-600 flex items-center justify-center shrink-0">{icon}</span>
+      {icon && (
+        <span className="w-11 h-11 rounded-2xl bg-sky-500/10 text-sky-600 flex items-center justify-center shrink-0">{icon}</span>
+      )}
       <span className="min-w-0">
         <span className="block text-zinc-400 text-sm">{label}</span>
-        <strong className="text-xl leading-tight block truncate">{value}</strong>
+        <strong className="text-lg leading-tight block break-all">{value}</strong>
       </span>
     </div>
   );
