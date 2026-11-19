@@ -2224,7 +2224,7 @@ export default function Home() {
             </div>
             <div>
               <label className="font-bold text-sm">Pembuka surat</label>
-              <textarea className="mt-1" rows={4} value={offerForm.intro} onChange={(e) => setOfferForm({ ...offerForm, intro: e.target.value })} />
+              <textarea className="mt-1" rows={7} style={{ minHeight: "168px" }} value={offerForm.intro} onChange={(e) => setOfferForm({ ...offerForm, intro: e.target.value })} />
             </div>
             <div>
               <p className="font-bold text-sm mb-2">Tarif layanan <span className="text-zinc-400 font-normal">— dari daftar harga jasa usaha ini</span></p>
@@ -2253,11 +2253,11 @@ export default function Home() {
             </div>
             <div>
               <label className="font-bold text-sm">Keterangan (Ket)</label>
-              <textarea className="mt-1" rows={2} value={offerForm.notes} onChange={(e) => setOfferForm({ ...offerForm, notes: e.target.value })} placeholder="cth: Lumpur Tinja: berasal dari toilet/wc; Lumpur Domestik: berasal dari toilet/wc, cuci tangan, dapur, dll (non-B3)" />
+              <textarea className="mt-1" rows={3} value={offerForm.notes} onChange={(e) => setOfferForm({ ...offerForm, notes: e.target.value })} placeholder="cth: Lumpur Tinja: berasal dari toilet/wc; Lumpur Domestik: berasal dari toilet/wc, cuci tangan, dapur, dll (non-B3)" />
             </div>
             <div>
               <label className="font-bold text-sm">Penutup surat</label>
-              <textarea className="mt-1" rows={4} value={offerForm.closing} onChange={(e) => setOfferForm({ ...offerForm, closing: e.target.value })} />
+              <textarea className="mt-1" rows={6} style={{ minHeight: "144px" }} value={offerForm.closing} onChange={(e) => setOfferForm({ ...offerForm, closing: e.target.value })} />
             </div>
             <div>
               <label className="font-bold text-sm">Nama penandatangan <span className="text-zinc-400 font-normal">(opsional)</span></label>
