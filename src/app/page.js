@@ -1445,7 +1445,10 @@ export default function Home() {
               </button>
               {profileMenu("left")}
             </div>
-            <p className="min-w-0 flex-1 text-[15px] leading-tight truncate">Selamat datang, <span className="font-bold">{activeBusiness?.name || settings.business_name || username}</span></p>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] leading-tight">Selamat datang,</p>
+              <h1 className="font-bold text-[15px] leading-tight line-clamp-2">{activeBusiness?.name || settings.business_name || username}</h1>
+            </div>
             <div className="flex items-center shrink-0">
               <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
                 aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
@@ -1505,7 +1508,7 @@ export default function Home() {
           {/* Kartu ringkasan ala Moni: angka besar di tengah kartu panel
             (putih di mode terang), dua kolom ringkasan di bawahnya, lalu
             tombol aksi utama. Sapaan sudah pindah ke header biru di atas. */}
-          <section className="relative -mt-8 -mx-4 bg-panel border border-line rounded-[28px] p-5 sm:p-6 shadow">
+          <section className="relative -mt-4 -mx-4 bg-panel border border-line rounded-t-[28px] p-5 sm:p-6 shadow">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm text-zinc-400">Pemasukan bulan ini</p>
               <span className="inline-flex items-center gap-1.5 bg-sky-500/10 text-sky-600 text-xs font-bold px-3 py-1.5 rounded-full shrink-0">
