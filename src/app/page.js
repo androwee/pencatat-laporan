@@ -134,6 +134,9 @@ export default function Home() {
   const [businessForm, setBusinessForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", bank_name: "", bank_account_number: "", bank_account_holder: "" });
   const [businessError, setBusinessError] = useState("");
   const [invoicePreview, setInvoicePreview] = useState(null);
+  const [offerForm, setOfferForm] = useState(null);
+  const [offerJob, setOfferJob] = useState(null);
+  const [offerPreview, setOfferPreview] = useState(null);
   const [historyCustomer, setHistoryCustomer] = useState(null);
   const [historyJobs, setHistoryJobs] = useState(null);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
@@ -946,6 +949,194 @@ export default function Home() {
       window.open(url, "_blank", "noopener");
     } catch (err) { setError(`Gagal membuka PDF: ${err.message}`); }
   };
+
+  // ---------- Surat Penawaran Harga ----------
+  // Nomor surat berurutan per usaha, disimpan lokal di perangkat
+  // (kunci: pencatat-offer-seq-<business_id>), naik tiap kali surat
+  // diunduh/dibagikan. Format: 001/SPH/<inisial usaha>, mis. 001/SPH/SR.
+  const offerInitials = () => {
+    const name = (settings.business_name || "").replace(/^(cv|pt|ud|pd)\.?\s+/i, "");
+    const init = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+    return init || "XX";
+  };
+  const offerSeqKey = () => `pencatat-offer-seq-${storedBusinessId() || "default"}`;
+  const nextOfferSeq = () => {
+    try { return Math.max(1, Number(localStorage.getItem(offerSeqKey())) || 1); } catch { return 1; }
+  };
+  const bumpOfferSeq = () => {
+    try { localStorage.setItem(offerSeqKey(), String(nextOfferSeq() + 1)); } catch { /* abaikan */ }
+  };
+  const formatDateId = (iso) => {
+    const months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    const [y, m, d] = String(iso || "").split("-");
+    if (!y || !m || !d) return String(iso || "");
+    return `${Number(d)} ${months[Number(m) - 1] || ""} ${y}`;
+  };
+  const cityFromAddress = (addr) => {
+    const parts = String(addr || "").split(",").map((s) => s.trim()).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : "";
+  };
+
+  const openOfferForm = (job) => {
+    const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
+    const seq = nextOfferSeq();
+    const items = job.items?.length
+      ? job.items
+      : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: job.amount, amount: job.amount }];
+    const jobServiceNames = items.map((it) => it.service_type).filter(Boolean);
+    const rows = (servicePrices.length ? servicePrices : items.map((it) => ({ service_type: it.service_type, unit: it.unit || "paket", unit_price: it.unit_price })))
+      .map((p) => ({ service_type: p.service_type, unit: p.unit || "paket", unit_price: Number(p.unit_price || 0), checked: jobServiceNames.includes(p.service_type) }));
+    jobServiceNames.forEach((name) => {
+      if (!rows.some((r) => r.service_type === name)) {
+        const it = items.find((i) => i.service_type === name);
+        rows.push({ service_type: name, unit: it?.unit || "paket", unit_price: Number(it?.unit_price || 0), checked: true });
+      }
+    });
+    const businessName = settings.business_name || "Pencatat Laporan";
+    const serviceList = rows.filter((r) => r.checked).map((r) => r.service_type).join(", ");
+    const phone = settings.business_phone || "";
+    const website = settings.business_website || "";
+    setDetailJob(null);
+    setOfferJob(job);
+    setOfferForm({
+      number: `${String(seq).padStart(3, "0")}/SPH/${offerInitials()}`,
+      sifat: "Segera",
+      lampiran: "1 (satu) Dokumen",
+      perihal: "Penawaran Harga",
+      place: cityFromAddress(settings.business_address),
+      date: todayWib(),
+      recipientTitle: "Bapak/Ibu Pimpinan",
+      recipientName: job.customer_name || customer.name || "",
+      recipientAddress: customer.address || "",
+      intro: `Bersama dengan ini kami ${businessName} mengajukan penawaran harga kepada Bapak/Ibu Pimpinan, terkait layanan ${serviceList || "jasa kami"}. Kami siap dan berkomitmen untuk melayani kebutuhan Anda dengan cepat, bersih, dan profesional. Adapun besaran tarif layanan kami sebagai berikut:`,
+      rows,
+      notes: "",
+      closing: `Demikian penawaran harga ini kami sampaikan, besar harapan kami untuk dapat bekerjasama dan siap melayani kebutuhan Bapak/Ibu. Untuk pemesanan dan informasi lebih lanjut, silakan hubungi kami di Telp/WA ${phone}${website ? ` atau kunjungi ${website}` : ""}. Kami ucapkan terimakasih.`,
+      signer: "",
+    });
+  };
+
+  const buildOfferDoc = async (form) => {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF();
+    const businessName = settings.business_name || "Pencatat Laporan";
+    let y = 18;
+    let textX = 14;
+    let logoBottom = 0;
+    if (settings.business_logo) {
+      try {
+        const props = doc.getImageProperties(settings.business_logo);
+        const format = settings.business_logo.includes("image/jpeg") ? "JPEG" : "PNG";
+        const aspect = props.width / props.height;
+        const logoW = aspect >= 1 ? 28 : Math.min(28, 20 * aspect);
+        const logoH = aspect >= 1 ? 28 / aspect : 20;
+        doc.addImage(settings.business_logo, format, 14, 12, logoW, logoH);
+        textX = 14 + logoW + 4;
+        logoBottom = 12 + logoH;
+      } catch { /* logo rusak: lanjut tanpa logo */ }
+    }
+    doc.setFontSize(18); doc.setFont("helvetica", "bold");
+    doc.splitTextToSize(businessName.toUpperCase(), 196 - textX).forEach((l) => { doc.text(l, textX, y); y += 8; });
+    doc.setFontSize(11); doc.setFont("helvetica", "normal");
+    const businessLines = [settings.business_address, [settings.business_phone, settings.business_website].filter(Boolean).join(" · ")].filter(Boolean);
+    businessLines.forEach((line) => { doc.splitTextToSize(String(line), 196 - textX).forEach((l) => { doc.text(l, textX, y); y += 6; }); });
+    y = Math.max(y, logoBottom) + 4;
+    doc.setDrawColor(230, 0, 18); doc.setLineWidth(0.8); doc.line(14, y, 196, y); y += 10;
+    doc.setFontSize(11);
+    [["Nomor", form.number], ["Sifat", form.sifat], ["Lampiran", form.lampiran], ["Perihal", form.perihal]].forEach(([label, value]) => {
+      doc.setFont("helvetica", "normal"); doc.text(label, 14, y);
+      doc.text(":", 44, y);
+      doc.setFont("helvetica", "bold"); doc.text(String(value || "-"), 48, y); y += 6;
+    });
+    y += 4;
+    doc.setFont("helvetica", "normal");
+    doc.text("Kepada Yth.", 14, y); y += 6;
+    doc.setFont("helvetica", "bold");
+    if (form.recipientTitle) doc.splitTextToSize(form.recipientTitle, 182).forEach((l) => { doc.text(l, 14, y); y += 6; });
+    if (form.recipientName) doc.splitTextToSize(form.recipientName, 182).forEach((l) => { doc.text(l, 14, y); y += 6; });
+    doc.setFont("helvetica", "normal");
+    if (form.recipientAddress) doc.splitTextToSize(form.recipientAddress, 182).forEach((l) => { doc.text(l, 14, y); y += 6; });
+    y += 4;
+    const placeDate = [form.place, formatDateId(form.date)].filter(Boolean).join(", ");
+    if (placeDate) { doc.text(placeDate, 196, y, { align: "right" }); y += 8; }
+    if (form.intro) doc.splitTextToSize(form.intro, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
+    y += 4;
+    const rows = form.rows.filter((r) => r.checked);
+    doc.setFont("helvetica", "bold");
+    doc.text("No", 14, y); doc.text("Jenis Pelayanan", 24, y); doc.text("Tarif", 196, y, { align: "right" }); y += 7;
+    doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.4); doc.line(14, y, 196, y); y += 8;
+    doc.setFont("helvetica", "normal");
+    rows.forEach((r, i) => {
+      const lines = doc.splitTextToSize(r.service_type || "-", 100);
+      doc.text(`${i + 1}.`, 14, y);
+      doc.text(`${fmtRp(r.unit_price)} / ${r.unit || "paket"}`, 196, y, { align: "right" });
+      lines.forEach((line) => { doc.text(line, 24, y); y += 6; });
+      y += 2;
+    });
+    y += 2;
+    if (form.notes) {
+      doc.setFontSize(10);
+      doc.splitTextToSize(`Ket: ${form.notes}`, 182).forEach((line) => { doc.text(line, 14, y); y += 5; });
+      doc.setFontSize(11); y += 4;
+    }
+    if (form.closing) doc.splitTextToSize(form.closing, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
+    y += 8;
+    doc.setFont("helvetica", "bold");
+    doc.text("Penanggung Jawab", 140, y); y += 6;
+    doc.text(businessName, 140, y); y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.text("(............................................)", 140, y); y += 6;
+    if (form.signer) doc.text(form.signer, 140, y);
+    doc.setFontSize(10);
+    doc.text("Surat penawaran ini dibuat dari aplikasi Pencatat Laporan.", 14, 285);
+    return doc;
+  };
+
+  const offerFilename = (form) => `penawaran-harga-${String(form.number || "penawaran").replace(/[^A-Za-z0-9]+/g, "-")}.pdf`;
+
+  const downloadOffer = async () => {
+    if (!offerForm) return;
+    try {
+      const doc = await buildOfferDoc(offerForm);
+      doc.save(offerFilename(offerForm));
+      bumpOfferSeq();
+    } catch (err) { setError(`Gagal membuat surat penawaran: ${err.message}`); }
+  };
+
+  const sendOfferWhatsApp = async () => {
+    if (!offerForm) return;
+    const customer = customers.find((c) => c.id === Number(offerJob?.customer_id)) || {};
+    const phone = toWaNumber(customer.phone || offerJob?.customer_phone);
+    const rows = offerForm.rows.filter((r) => r.checked);
+    const msg = [
+      `${settings.business_name || "Pencatat Laporan"}`,
+      `Surat Penawaran Harga ${offerForm.number}`,
+      `Kepada: ${offerForm.recipientName || "-"}`,
+      "",
+      ...rows.map((r) => `- ${r.service_type}: ${fmtRp(r.unit_price)} / ${r.unit || "paket"}`),
+      settings.business_phone ? `\nInfo: ${settings.business_phone}` : "",
+    ].filter((l) => l !== "").join("\n");
+    try {
+      const doc = await buildOfferDoc(offerForm);
+      const file = new File([doc.output("blob")], offerFilename(offerForm), { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Penawaran Harga ${offerForm.number}`, text: `${settings.business_name || "Pencatat Laporan"} — Penawaran Harga ${offerForm.number}.` });
+        bumpOfferSeq();
+        return;
+      }
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+    }
+    if (!/^62\d{8,13}$/.test(phone)) {
+      setError("Berbagi file PDF tidak didukung browser ini, dan nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan, atau unduh PDF-nya lalu kirim manual dari WhatsApp.");
+      return;
+    }
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+    bumpOfferSeq();
+  };
+
+  const previewOffer = () => { if (offerForm) setOfferPreview({ ...offerForm, rows: offerForm.rows.map((r) => ({ ...r })) }); };
+  const closeOfferPreview = () => { setOfferPreview(null); };
 
   const markJobPaid = async (job, after) => {
     const remaining = remainingOf(job);
@@ -1914,6 +2105,10 @@ export default function Home() {
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
               Preview Invoice
             </button>
+            <button onClick={() => openOfferForm(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M9 13h6M9 17h6" /></svg>
+              Buat Surat Penawaran Harga
+            </button>
             <div className="grid grid-cols-3 gap-2">
               <button onClick={() => downloadInvoice(detailJob)} aria-label="Unduh Invoice (PDF)" title="Unduh Invoice (PDF)" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
@@ -1987,6 +2182,151 @@ export default function Home() {
             <button onClick={() => downloadInvoice(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
             <button onClick={() => { const j = invoicePreview.job; closeInvoicePreview(); sendInvoiceWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">Kirim via WhatsApp</button>
             <button onClick={closeInvoicePreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tutup preview</button>
+          </div>
+        </Modal>
+        );
+      })()}
+
+      {offerForm && (
+        <Modal title="Surat Penawaran Harga" onClose={() => setOfferForm(null)}>
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="font-bold text-sm">Nomor</label>
+                <input className="mt-1" value={offerForm.number} onChange={(e) => setOfferForm({ ...offerForm, number: e.target.value })} />
+              </div>
+              <div>
+                <label className="font-bold text-sm">Sifat</label>
+                <input className="mt-1" value={offerForm.sifat} onChange={(e) => setOfferForm({ ...offerForm, sifat: e.target.value })} />
+              </div>
+              <div>
+                <label className="font-bold text-sm">Lampiran</label>
+                <input className="mt-1" value={offerForm.lampiran} onChange={(e) => setOfferForm({ ...offerForm, lampiran: e.target.value })} />
+              </div>
+              <div>
+                <label className="font-bold text-sm">Perihal</label>
+                <input className="mt-1" value={offerForm.perihal} onChange={(e) => setOfferForm({ ...offerForm, perihal: e.target.value })} />
+              </div>
+              <div>
+                <label className="font-bold text-sm">Tempat</label>
+                <input className="mt-1" value={offerForm.place} onChange={(e) => setOfferForm({ ...offerForm, place: e.target.value })} placeholder="Kota" />
+              </div>
+              <div>
+                <label className="font-bold text-sm">Tanggal</label>
+                <input type="date" className="mt-1" value={offerForm.date} onChange={(e) => setOfferForm({ ...offerForm, date: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <label className="font-bold text-sm">Kepada Yth.</label>
+              <input className="mt-1" value={offerForm.recipientTitle} onChange={(e) => setOfferForm({ ...offerForm, recipientTitle: e.target.value })} />
+              <input className="mt-2" value={offerForm.recipientName} onChange={(e) => setOfferForm({ ...offerForm, recipientName: e.target.value })} placeholder="Nama penerima / perusahaan" />
+              <input className="mt-2" value={offerForm.recipientAddress} onChange={(e) => setOfferForm({ ...offerForm, recipientAddress: e.target.value })} placeholder="Alamat penerima (opsional)" />
+            </div>
+            <div>
+              <label className="font-bold text-sm">Pembuka surat</label>
+              <textarea className="mt-1" rows={4} value={offerForm.intro} onChange={(e) => setOfferForm({ ...offerForm, intro: e.target.value })} />
+            </div>
+            <div>
+              <p className="font-bold text-sm mb-2">Tarif layanan <span className="text-zinc-400 font-normal">— dari daftar harga jasa usaha ini</span></p>
+              <div className="space-y-2">
+                {offerForm.rows.map((r, i) => (
+                  <div key={i} className="border border-line rounded-xl p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" className="w-4 h-4 accent-[#e60012] shrink-0" style={{ width: "auto" }} checked={r.checked} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, checked: e.target.checked } : x) })} aria-label="Sertakan layanan ini" />
+                      <input value={r.service_type} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, service_type: e.target.value } : x) })} placeholder="Nama layanan" className="flex-1 min-w-0" />
+                      <button type="button" onClick={() => setOfferForm({ ...offerForm, rows: offerForm.rows.filter((_, j) => j !== i) })} aria-label="Hapus layanan" className="bg-zinc-800 w-8 h-8 rounded-lg font-bold shrink-0">×</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pl-6">
+                      <div>
+                        <label className="text-xs text-zinc-400">Tarif (Rp)</label>
+                        <input inputMode="numeric" value={r.unit_price} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, unit_price: e.target.value.replace(/\D/g, "") } : x) })} />
+                      </div>
+                      <div>
+                        <label className="text-xs text-zinc-400">Satuan</label>
+                        <input value={r.unit} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, unit: e.target.value } : x) })} placeholder="cth: meter kubik" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => setOfferForm({ ...offerForm, rows: [...offerForm.rows, { service_type: "", unit: "paket", unit_price: 0, checked: true }] })} className="mt-2 bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">+ Tambah layanan</button>
+            </div>
+            <div>
+              <label className="font-bold text-sm">Keterangan (Ket)</label>
+              <textarea className="mt-1" rows={2} value={offerForm.notes} onChange={(e) => setOfferForm({ ...offerForm, notes: e.target.value })} placeholder="cth: Lumpur Tinja: berasal dari toilet/wc; Lumpur Domestik: berasal dari toilet/wc, cuci tangan, dapur, dll (non-B3)" />
+            </div>
+            <div>
+              <label className="font-bold text-sm">Penutup surat</label>
+              <textarea className="mt-1" rows={4} value={offerForm.closing} onChange={(e) => setOfferForm({ ...offerForm, closing: e.target.value })} />
+            </div>
+            <div>
+              <label className="font-bold text-sm">Nama penandatangan <span className="text-zinc-400 font-normal">(opsional)</span></label>
+              <input className="mt-1" value={offerForm.signer} onChange={(e) => setOfferForm({ ...offerForm, signer: e.target.value })} placeholder="Dibiarkan kosong bila belum ada" />
+            </div>
+          </div>
+          <div className="mt-5 space-y-2">
+            <button onClick={sendOfferWhatsApp} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3.5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 shadow">Kirim via WhatsApp</button>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={previewOffer} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Preview</button>
+              <button onClick={downloadOffer} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
+            </div>
+          </div>
+          <p className="text-xs text-zinc-400 mt-3">Kop surat dan tarif mengikuti profil usaha aktif dan daftar harga jasa (Pengaturan). Nomor surat otomatis berurutan per usaha. Kirim via WhatsApp membagikan file PDF langsung lewat lembar berbagi perangkat; bila tidak didukung, dibuka chat wa.me ke nomor pelanggan dengan ringkasan tarif.</p>
+        </Modal>
+      )}
+
+      {offerPreview && (() => {
+        const form = offerPreview;
+        const businessName = settings.business_name || "Pencatat Laporan";
+        const rows = form.rows.filter((r) => r.checked);
+        const placeDate = [form.place, formatDateId(form.date)].filter(Boolean).join(", ");
+        return (
+        <Modal title="Preview Surat Penawaran" onClose={closeOfferPreview}>
+          <div className="relative bg-white text-black rounded-xl overflow-hidden border border-line text-sm">
+            <div className="relative z-10 p-4">
+              <div className="flex gap-3 items-start">
+                {settings.business_logo && <img src={settings.business_logo} alt="" className="w-14 h-14 object-contain shrink-0" />}
+                <div className="min-w-0">
+                  <p className="font-bold text-base leading-tight uppercase">{businessName}</p>
+                  {settings.business_address && <p className="text-xs text-zinc-600">{settings.business_address}</p>}
+                  {(settings.business_phone || settings.business_website) && <p className="text-xs text-zinc-600">{[settings.business_phone, settings.business_website].filter(Boolean).join(" · ")}</p>}
+                </div>
+              </div>
+              <div className="border-t-2 border-[#e60012] my-3" />
+              <div className="text-xs space-y-0.5">
+                <p><span className="inline-block w-20">Nomor</span>: <strong>{form.number}</strong></p>
+                <p><span className="inline-block w-20">Sifat</span>: {form.sifat}</p>
+                <p><span className="inline-block w-20">Lampiran</span>: {form.lampiran}</p>
+                <p><span className="inline-block w-20">Perihal</span>: <strong>{form.perihal}</strong></p>
+              </div>
+              <p className="text-xs mt-3">Kepada Yth.</p>
+              <p className="text-xs font-bold">{form.recipientTitle}</p>
+              {form.recipientName && <p className="text-xs font-bold">{form.recipientName}</p>}
+              {form.recipientAddress && <p className="text-xs">{form.recipientAddress}</p>}
+              {placeDate && <p className="text-xs text-right mt-3">{placeDate}</p>}
+              {form.intro && <p className="text-xs leading-relaxed mt-3 text-justify">{form.intro}</p>}
+              <table className="w-full text-xs mt-3">
+                <thead><tr className="border-b border-zinc-300 text-left"><th className="py-1.5 pr-2 w-8">No</th><th className="py-1.5 pr-2">Jenis Pelayanan</th><th className="py-1.5 text-right">Tarif</th></tr></thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} className="border-b border-zinc-200 align-top"><td className="py-1.5 pr-2">{i + 1}.</td><td className="py-1.5 pr-2">{r.service_type}</td><td className="py-1.5 text-right whitespace-nowrap">{fmtRp(r.unit_price)} / {r.unit || "paket"}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+              {form.notes && <p className="text-xs leading-relaxed mt-3">Ket: {form.notes}</p>}
+              {form.closing && <p className="text-xs leading-relaxed mt-3 text-justify">{form.closing}</p>}
+              <div className="mt-6 ml-auto w-44 text-xs">
+                <p className="font-bold">Penanggung Jawab</p>
+                <p className="font-bold">{businessName}</p>
+                <p className="mt-8">(............................................)</p>
+                {form.signer && <p>{form.signer}</p>}
+              </div>
+              <p className="text-[11px] text-zinc-500 mt-6">Surat penawaran ini dibuat dari aplikasi Pencatat Laporan.</p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button onClick={downloadOffer} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
+            <button onClick={sendOfferWhatsApp} className="bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-white text-sm">Kirim via WhatsApp</button>
           </div>
         </Modal>
         );
