@@ -1429,9 +1429,8 @@ export default function Home() {
 
   return (
     <>
-      {tab === "dashboard" && (
         <header className="w-full text-white rounded-b-[28px]" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
-          <div className="max-w-5xl mx-auto px-4 pt-3 pb-20 flex items-center gap-3">
+          <div className={"max-w-5xl mx-auto px-4 flex items-center gap-3 " + (tab === "dashboard" ? "pt-3 pb-20" : "py-3")}>
             <div className="relative shrink-0">
               <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
                 className="w-11 h-11 rounded-full overflow-hidden border-2 border-white/60 bg-white/15 flex items-center justify-center">
@@ -1468,37 +1467,7 @@ export default function Home() {
             </div>
           </div>
         </header>
-      )}
       <main className="max-w-5xl mx-auto px-4 pt-4 pb-48">
-      {tab !== "dashboard" && (
-      <header className="flex justify-between items-center gap-3">
-        <div className="flex items-center gap-3">
-          <AppLogo size={44} theme={theme} />
-          <h1 className="font-semibold tracking-tight text-xl sm:text-2xl leading-tight">Pencatat Laporan</h1>
-        </div>
-        <div className="relative flex items-center gap-2 shrink-0">
-          <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
-            aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
-            title={theme === "dark" ? "Mode terang" : "Mode gelap"}
-            className="w-11 h-11 rounded-full border border-line bg-panel flex items-center justify-center text-zinc-400 hover:text-persona shrink-0">
-            {theme === "dark"
-              ? icon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
-              : icon(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)}
-          </button>
-          <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
-            className="w-11 h-11 rounded-full overflow-hidden shrink-0 border border-line bg-panel flex items-center justify-center">
-            {settings.business_logo ? (
-              <img src={settings.business_logo} alt="Logo perusahaan" className="w-full h-full object-cover" />
-            ) : (
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-zinc-400">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-              </svg>
-            )}
-          </button>
-          {profileMenu("right")}
-        </div>
-      </header>
-      )}
 
       {error && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm mt-4">{error}</p>}
 
