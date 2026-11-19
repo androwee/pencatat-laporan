@@ -60,6 +60,11 @@ input[type="month"]::-webkit-calendar-picker-indicator {
   background: #f4f5f7;
   color: #111827;
 }
+
+/* Lembar konten tab (Pelanggan/Transaksi/Piutang/Laporan): latar sama dengan
+   latar halaman, supaya hanya lengkung atasnya yang terlihat saat menimpa header. */
+.sheet-bg { background: #0a0a0a; }
+.theme-light .sheet-bg { background: #f4f5f7; }
 .theme-light .bg-panel {
   background: #ffffff;
 }

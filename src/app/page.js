@@ -1430,7 +1430,7 @@ export default function Home() {
   return (
     <>
         <header className="w-full text-white rounded-b-[28px]" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
-          <div className={"max-w-5xl mx-auto px-4 flex items-center gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] " + (tab === "dashboard" ? "pb-20" : "pb-3")}>
+          <div className="max-w-5xl mx-auto px-4 flex items-center gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-20">
             <div className="relative shrink-0">
               <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
                 className="w-11 h-11 rounded-full overflow-hidden border-2 border-white/60 bg-white/15 flex items-center justify-center">
@@ -1474,8 +1474,9 @@ export default function Home() {
       {tab === "dashboard" && dash && (
         <div className="space-y-5">
           {/* Kartu ringkasan ala Moni: angka besar di tengah kartu panel
-            (putih di mode terang), dua kolom ringkasan di bawahnya, lalu
-            tombol aksi utama. Sapaan sudah pindah ke header biru di atas. */}
+            (putih di mode terang), dua baris ringkasan di bawahnya
+            (Hari ini/Piutang, Total pelanggan/Total transaksi).
+            Sapaan sudah pindah ke header biru di atas. */}
           <section className="relative -mt-20 -mx-4 bg-panel border border-line rounded-t-[28px] p-5 sm:p-6 shadow">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm text-zinc-400">Pemasukan bulan ini</p>
@@ -1495,12 +1496,17 @@ export default function Home() {
                 <p className="font-bold text-lg leading-tight text-sky-600">{fmtRp(dash.outstanding)}</p>
               </div>
             </div>
-            <button onClick={() => openJobModal(null)} className="w-full mt-5 bg-persona hover:bg-persona-dark text-white font-bold py-3 rounded-full text-sm transition-transform duration-150 active:scale-[0.98]">+ Tambah transaksi</button>
+            <div className="flex gap-8 mt-5 pt-4 border-t border-line">
+              <div>
+                <p className="text-xs text-zinc-400">Total pelanggan</p>
+                <p className="font-bold text-lg leading-tight text-sky-600">{dash.customers}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-400">Total transaksi</p>
+                <p className="font-bold text-lg leading-tight text-sky-600">{dash.jobs}</p>
+              </div>
+            </div>
           </section>
-          <div className="grid grid-cols-2 gap-3">
-            <Stat label="Total pelanggan" value={dash.customers} icon={icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>)} />
-            <Stat label="Total transaksi" value={dash.jobs} icon={icon(<><path d="M5 3h14v18H5z" /><path d="M8 7h8M8 11h8M8 15h5" /></>)} />
-          </div>
           {dash.outstanding > 0 && (
             <div className="bg-orange-500/10 border border-orange-500/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
               <span className="font-bold">Total piutang: {fmtRp(dash.outstanding)}</span>
@@ -1588,7 +1594,7 @@ export default function Home() {
       )}
 
       {tab === "customers" && (
-        <div className="mt-5 space-y-5">
+        <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="flex justify-between items-center gap-3">
             <h2 className="font-bold text-lg">Pelanggan</h2>
             <button onClick={() => openCustomerModal(null)} className="bg-persona hover:bg-persona-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Pelanggan</button>
@@ -1652,7 +1658,7 @@ export default function Home() {
       )}
 
       {tab === "jobs" && (
-        <div className="mt-5 space-y-5">
+        <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="flex justify-between items-center gap-3">
             <h2 className="font-bold text-lg">Transaksi</h2>
             <button onClick={() => openJobModal(null)} className="bg-persona hover:bg-persona-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Transaksi</button>
@@ -1750,7 +1756,7 @@ export default function Home() {
       )}
 
       {tab === "piutang" && (
-        <div className="mt-5 space-y-5">
+        <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="flex justify-between items-center gap-3">
             <h2 className="font-bold text-lg">Piutang</h2>
             <button onClick={() => showTab("dashboard")} className="bg-zinc-800 px-4 py-2.5 rounded-full font-bold text-sm shrink-0">← Kembali</button>
@@ -1796,7 +1802,7 @@ export default function Home() {
       )}
 
       {tab === "reports" && (
-        <div className="mt-5 space-y-5">
+        <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
             <h2 className="font-bold">Laporan pemasukan</h2>
             <div className="flex flex-wrap gap-3 items-end">
