@@ -102,9 +102,6 @@ function monthToRange(monthStr) {
 export default function Home() {
   const [view, setView] = useState("loading");
   const [username, setUsername] = useState("");
-  const [loginError, setLoginError] = useState("");
-  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
-  const [showPassword, setShowPassword] = useState(false);
   const [tab, setTab] = useState("dashboard");
   const [error, setError] = useState("");
   const [dash, setDash] = useState(null);
@@ -343,15 +340,6 @@ export default function Home() {
     setTheme(next);
     try { localStorage.setItem("pencatat-theme", next); } catch {}
     document.documentElement.classList.toggle("theme-light", next === "light");
-  };
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoginError("");
-    try {
-      await api("/api/login", { method: "POST", body: JSON.stringify(loginForm) });
-      location.reload();
-    } catch (err) { setLoginError(err.message); }
   };
 
   const handleLogout = async () => {
@@ -1073,40 +1061,16 @@ export default function Home() {
               {typeof window !== "undefined" && new URLSearchParams(window.location.search).get("auth_error") && (
                 <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm mb-4">{new URLSearchParams(window.location.search).get("auth_error")}</p>
               )}
-              <a href="/api/auth/google" className="w-full bg-white text-black font-bold py-3.5 rounded-full flex items-center justify-center gap-2">
-                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47a5.53 5.53 0 0 1-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z" /><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09A12 12 0 0 0 12 24z" /><path fill="#FBBC05" d="M5.27 14.29A7.2 7.2 0 0 1 4.89 12c0-.8.14-1.57.38-2.29V6.62H1.29a12 12 0 0 0 0 10.76l3.98-3.09z" /><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42A11.98 11.98 0 0 0 12 0 12 12 0 0 0 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z" /></svg>
-                Login dengan Google
-              </a>
-              <p className="text-zinc-400 text-xs text-center mt-3">Pendaftaran terbuka: siapa pun dengan akun Google bisa daftar dan membuat usaha sendiri. Data tiap usaha terpisah.</p>
-              <div className="flex items-center gap-3 my-4"><span className="flex-1 border-t border-line" /><span className="text-zinc-400 text-xs">atau login lama</span><span className="flex-1 border-t border-line" /></div>
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none">
-                    {fieldIcon(<><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>)}
-                  </span>
-                  <input className="login-input pl-11" name="username" autoComplete="username" required
-                    placeholder="Username" aria-label="Username"
-                    value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} />
+              <div className="relative rounded-[26px] bg-gradient-to-br from-red-500 via-orange-400 to-red-500 p-[2px] shadow-[0_0_36px_rgba(239,68,68,0.35)]">
+                <div className="rounded-[24px] bg-panel px-4 py-5">
+                  <a href="/api/auth/google" className="w-full bg-white text-black font-bold py-4 rounded-full flex items-center justify-center gap-2 text-base shadow">
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47a5.53 5.53 0 0 1-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z" /><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09A12 12 0 0 0 12 24z" /><path fill="#FBBC05" d="M5.27 14.29A7.2 7.2 0 0 1 4.89 12c0-.8.14-1.57.38-2.29V6.62H1.29a12 12 0 0 0 0 10.76l3.98-3.09z" /><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42A11.98 11.98 0 0 0 12 0 12 12 0 0 0 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z" /></svg>
+                    Login dengan Google
+                  </a>
+                  <p className="text-zinc-400 text-xs text-center mt-3">Satu akun Google untuk masuk dan daftar. Data tiap usaha terpisah.</p>
                 </div>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none">
-                    {fieldIcon(<><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>)}
-                  </span>
-                  <input className="login-input pl-11 pr-11" type={showPassword ? "text" : "password"}
-                    autoComplete="current-password" required placeholder="Password" aria-label="Password"
-                    value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-persona p-1">
-                    {showPassword
-                      ? fieldIcon(<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 6.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></>)
-                      : fieldIcon(<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>)}
-                  </button>
-                </div>
-                {loginError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{loginError}</p>}
-                <button type="submit" className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Masuk</button>
-              </form>
-              <p className="text-zinc-400 text-xs text-center mt-4">Login password lama hanya untuk akun admin lama. Pemilik usaha baru masuk dengan Google.</p>
+              </div>
+              <p className="text-zinc-400 text-xs text-center mt-4">Pendaftaran terbuka: siapa pun dengan akun Google bisa daftar dan membuat usaha sendiri.</p>
             </div>
             <p className="text-zinc-400 text-xs text-center mt-4">Pencatat Laporan — Pencatat Pelanggan Jasa</p>
           </div>
