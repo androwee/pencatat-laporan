@@ -1389,11 +1389,83 @@ export default function Home() {
 
   const reportTrend = report ? groupByDate(report.jobs) : { dates: [], values: [] };
 
-  // Label tanggal hari ini (WIB) untuk sapaan hero dashboard.
-  const todayLabel = (() => { const [y, m, d] = todayWib().split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); })();
+  // Label bulan berjalan (WIB) untuk chip di kartu ringkasan dashboard.
+  const monthLabel = (() => { const [y, m] = todayWib().split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" }); })();
+
+  // Menu profil dipakai di kedua header (klasik + Moni); posisinya
+  // mengikuti sisi avatar yang membukanya (kiri di header Moni).
+  const profileMenu = (side) => showProfileMenu && (
+    <>
+      <button aria-label="Tutup menu profil" onClick={() => { setInstallHelp(false); setShowProfileMenu(false); }} className="fixed inset-0 z-40 cursor-default" />
+      <div className={`absolute ${side === "left" ? "left-0" : "right-0"} top-full mt-2 w-56 bg-panel border border-line rounded-2xl shadow-2xl p-2 z-50`}>
+        <p className="text-xs text-zinc-400 px-3 py-2">Login sebagai {username}</p>
+        {activeBusiness && <p className="text-xs text-zinc-400 px-3 pb-1">Usaha: <span className="font-bold">{activeBusiness.name}</span></p>}
+        {businesses.length > 1 && businesses.map((b) => (
+          <button key={b.id} type="button" onClick={() => switchBusiness(b.id)} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">{b.id === activeBusiness?.id ? "✓ " : ""}{b.name}</button>
+        ))}
+        {businesses.length > 1 && <div className="border-t border-line my-1" />}
+        {authKind === "google" && (
+          <button type="button" onClick={() => { setShowProfileMenu(false); setBusinessForm({ business_name: "", business_address: "", business_phone: "", business_website: "", bank_name: "", bank_account_number: "", bank_account_holder: "" }); setBusinessError(""); setShowBusinessModal(true); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">+ Tambah usaha</button>
+        )}
+        {authKind === "password" && (
+          <a href="/api/auth/google?mode=link" className="block w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Hubungkan akun Google</a>
+        )}
+        <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("profil"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Profil</button>
+        <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("pengaturan"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Pengaturan</button>
+        <div className="border-t border-line my-1" />
+        <button type="button" disabled={isInstalled}
+          onClick={() => {
+            if (installPrompt) { setShowProfileMenu(false); setInstallHelp(false); installApp(); }
+            else setInstallHelp(true);
+          }}
+          className={`w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm ${isInstalled ? "text-zinc-500 opacity-40" : "hover:bg-zinc-800"}`}>Install aplikasi</button>
+        {installHelp && !installPrompt && (
+          <p className="text-xs text-zinc-400 px-3 pb-2">Browser belum menawarkan install. Di Chrome Android: ketuk ⋮ lalu "Tambahkan ke Layar Utama" atau "Install aplikasi". Di iPhone: ketuk Bagikan lalu "Tambah ke Layar Utama".</p>
+        )}
+        <button type="button" onClick={handleLogout} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm text-red-500 hover:bg-zinc-800">Keluar</button>
+      </div>
+    </>
+  );
 
   return (
     <main className="max-w-5xl mx-auto px-4 pt-4 pb-32">
+      {tab === "dashboard" ? (
+        <header className="rounded-[28px] p-4 sm:p-5 text-white shadow-lg shadow-sky-900/20" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
+          <div className="flex items-center gap-3">
+            <div className="relative shrink-0">
+              <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
+                className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/60 bg-white/15 flex items-center justify-center">
+                {settings.business_logo ? (
+                  <img src={settings.business_logo} alt="Logo perusahaan" className="w-full h-full object-cover" />
+                ) : (
+                  <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-white">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+                  </svg>
+                )}
+              </button>
+              {profileMenu("left")}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm">Selamat datang,</p>
+              <h1 className="font-black text-lg sm:text-xl leading-tight truncate">{activeBusiness?.name || settings.business_name || username}</h1>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
+                aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
+                title={theme === "dark" ? "Mode terang" : "Mode gelap"}
+                className="w-11 h-11 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center shrink-0">
+                {theme === "dark"
+                  ? icon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
+                  : icon(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)}
+              </button>
+              <button type="button" onClick={() => openSettings("pengaturan")} aria-label="Pengaturan" title="Pengaturan"
+                className="w-11 h-11 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center shrink-0">
+                {icon(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></>)}
+              </button>
+            </div>
+          </div>
+        </header>
+      ) : (
       <header className="flex justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <AppLogo size={44} theme={theme} />
@@ -1418,70 +1490,86 @@ export default function Home() {
               </svg>
             )}
           </button>
-          {showProfileMenu && (
-            <>
-              <button aria-label="Tutup menu profil" onClick={() => { setInstallHelp(false); setShowProfileMenu(false); }} className="fixed inset-0 z-40 cursor-default" />
-              <div className="absolute right-0 top-full mt-2 w-56 bg-panel border border-line rounded-2xl shadow-2xl p-2 z-50">
-                <p className="text-xs text-zinc-400 px-3 py-2">Login sebagai {username}</p>
-                {activeBusiness && <p className="text-xs text-zinc-400 px-3 pb-1">Usaha: <span className="text-white font-bold">{activeBusiness.name}</span></p>}
-                {businesses.length > 1 && businesses.map((b) => (
-                  <button key={b.id} type="button" onClick={() => switchBusiness(b.id)} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">{b.id === activeBusiness?.id ? "✓ " : ""}{b.name}</button>
-                ))}
-                {businesses.length > 1 && <div className="border-t border-line my-1" />}
-                {authKind === "google" && (
-                  <button type="button" onClick={() => { setShowProfileMenu(false); setBusinessForm({ business_name: "", business_address: "", business_phone: "", business_website: "", bank_name: "", bank_account_number: "", bank_account_holder: "" }); setBusinessError(""); setShowBusinessModal(true); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">+ Tambah usaha</button>
-                )}
-                {authKind === "password" && (
-                  <a href="/api/auth/google?mode=link" className="block w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Hubungkan akun Google</a>
-                )}
-                <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("profil"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Profil</button>
-                <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("pengaturan"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Pengaturan</button>
-                <div className="border-t border-line my-1" />
-                <button type="button" disabled={isInstalled}
-                  onClick={() => {
-                    if (installPrompt) { setShowProfileMenu(false); setInstallHelp(false); installApp(); }
-                    else setInstallHelp(true);
-                  }}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm ${isInstalled ? "text-zinc-500 opacity-40" : "hover:bg-zinc-800"}`}>Install aplikasi</button>
-                {installHelp && !installPrompt && (
-                  <p className="text-xs text-zinc-400 px-3 pb-2">Browser belum menawarkan install. Di Chrome Android: ketuk ⋮ lalu "Tambahkan ke Layar Utama" atau "Install aplikasi". Di iPhone: ketuk Bagikan lalu "Tambah ke Layar Utama".</p>
-                )}
-                <button type="button" onClick={handleLogout} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm text-red-500 hover:bg-zinc-800">Keluar</button>
-              </div>
-            </>
-          )}
+          {profileMenu("right")}
         </div>
       </header>
+      )}
 
       {error && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm mt-4">{error}</p>}
 
       {tab === "dashboard" && dash && (
         <div className="mt-5 space-y-5">
-          {/* Hero dashboard: satu titik fokus layar, angka pemasukan bulan
-            ini. Gradien biru (skema Moni) hanya di kartu ini: ia memisahkan
-            hero dari isi di bawahnya, bukan hiasan di seluruh halaman. */}
-          <section className="rounded-[28px] p-5 sm:p-6 text-white shadow-lg shadow-sky-900/20" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm">Selamat datang,</p>
-                <h2 className="font-black text-xl sm:text-2xl leading-tight">{activeBusiness?.name || settings.business_name || username}</h2>
-                <p className="text-xs mt-1">{todayLabel}</p>
-              </div>
-              <button onClick={() => openJobModal(null)} className="bg-white text-sky-700 font-bold px-4 py-3 rounded-full text-sm shrink-0 shadow transition-transform duration-150 active:scale-[0.97]">+ Tambah transaksi</button>
+          {/* Kartu ringkasan ala Moni: angka besar di tengah kartu panel
+            (putih di mode terang), dua kolom ringkasan di bawahnya, lalu
+            tombol aksi utama. Sapaan sudah pindah ke header biru di atas. */}
+          <section className="bg-panel border border-line rounded-[28px] p-5 sm:p-6 shadow">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm text-zinc-400">Pemasukan bulan ini</p>
+              <span className="inline-flex items-center gap-1.5 bg-sky-500/10 text-sky-600 text-xs font-bold px-3 py-1.5 rounded-full shrink-0">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
+                {monthLabel}
+              </span>
             </div>
-            <div className="mt-5">
-              <p className="text-sm">Pemasukan bulan ini</p>
-              <p className="font-black text-4xl sm:text-[2.75rem] leading-tight tracking-tight">{fmtRp(dash.month)}</p>
-            </div>
-            <div className="flex gap-8 mt-5 pt-4 border-t border-white/25">
+            <p className="font-black text-4xl sm:text-[2.75rem] leading-tight tracking-tight text-sky-600 mt-1">{fmtRp(dash.month)}</p>
+            <div className="flex gap-8 mt-5 pt-4 border-t border-line">
               <div>
-                <p className="text-xs">Hari ini</p>
-                <p className="font-bold text-lg leading-tight">{fmtRp(dash.today)}</p>
+                <p className="text-xs text-zinc-400">Hari ini</p>
+                <p className="font-bold text-lg leading-tight text-sky-600">{fmtRp(dash.today)}</p>
               </div>
               <div>
-                <p className="text-xs">Piutang</p>
-                <p className="font-bold text-lg leading-tight">{fmtRp(dash.outstanding)}</p>
+                <p className="text-xs text-zinc-400">Piutang</p>
+                <p className="font-bold text-lg leading-tight text-sky-600">{fmtRp(dash.outstanding)}</p>
               </div>
+            </div>
+            <button onClick={() => openJobModal(null)} className="w-full mt-5 bg-persona hover:bg-persona-dark text-white font-bold py-3 rounded-full text-sm transition-transform duration-150 active:scale-[0.98]">+ Tambah transaksi</button>
+          </section>
+          {selectedJobs.length > 0 && (
+            <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
+              <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
+              <button onClick={bulkDeleteJobs} className="bg-persona hover:bg-persona-dark px-4 py-2 rounded-xl font-bold text-sm">Hapus yang dipilih</button>
+              <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
+            </div>
+          )}
+          <section className="bg-panel border border-line rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between gap-3 p-4 pb-0">
+              <h2 className="font-bold">Transaksi Terbaru</h2>
+              <button onClick={() => showTab("jobs")} className="text-sky-600 font-bold text-sm shrink-0">Lihat Semua</button>
+            </div>
+            <p className="text-xs text-zinc-400 px-4 pt-1">Tahan lama pada transaksi untuk memilih.</p>
+            <div className="sm:hidden p-4 pt-2 space-y-3">
+              {dash.recent.map((j) => (
+                <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
+                  className={`border rounded-2xl p-3 select-none flex items-center gap-3 ${selectedJobs.includes(j.id) ? "border-persona bg-sky-500/10" : "border-line"}`}>
+                  <input type="checkbox" className="w-4 h-4 accent-[#0284C7] shrink-0" style={{ width: "auto" }}
+                    checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} />
+                  <span className="w-11 h-11 rounded-full bg-sky-500/10 text-sky-600 font-black flex items-center justify-center shrink-0">{(j.customer_name || "?").charAt(0).toUpperCase()}</span>
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate">{j.customer_name}</strong>
+                    <span className="block text-zinc-400 text-sm truncate">{j.service_type} · {j.job_date}</span>
+                    {remainingOf(j) > 0 && <span className="block text-sm font-bold text-orange-400">Sisa: {fmtRp(remainingOf(j))}</span>}
+                  </span>
+                  <span className="text-right shrink-0">
+                    <span className="block font-bold">{fmtRp(j.amount)}</span>
+                    {statusPill(j.status)}
+                  </span>
+                </div>
+              ))}
+              {!dash.recent.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
+            </div>
+            <div className="hidden sm:block overflow-x-auto p-4 pt-2">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">Tanggal</th><th className="py-2 pr-3">Pelanggan</th><th className="py-2 pr-3">Jasa</th><th className="py-2 pr-3">Nominal</th><th className="py-2">Status</th></tr></thead>
+                <tbody>
+                  {dash.recent.map((j) => (
+                    <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
+                      className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-sky-500/10" : ""}`}>
+                      <td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td>
+                      <td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status)}</td>
+                    </tr>
+                  ))}
+                  {!dash.recent.length && <tr><td colSpan="5" className="py-4 text-zinc-400">Belum ada transaksi.</td></tr>}
+                </tbody>
+              </table>
             </div>
           </section>
           <div className="grid grid-cols-2 gap-3">
@@ -1522,51 +1610,6 @@ export default function Home() {
             <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} onSelect={(part) => openJobsForStatus(part.label)} /></Card>
           </div>
           <p className="text-xs text-zinc-400">Ketuk batang grafik atau potongan donat untuk melihat transaksinya, dan ketuk kotak transaksi untuk melihat detailnya.</p>
-          {selectedJobs.length > 0 && (
-            <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
-              <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
-              <button onClick={bulkDeleteJobs} className="bg-persona hover:bg-persona-dark px-4 py-2 rounded-xl font-bold text-sm">Hapus yang dipilih</button>
-              <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
-            </div>
-          )}
-          <section className="bg-panel border border-line rounded-2xl overflow-hidden">
-            <h2 className="font-bold p-4 pb-0">Transaksi terbaru</h2>
-            <p className="text-xs text-zinc-400 px-4 pt-1">Tahan lama pada transaksi untuk memilih.</p>
-            <div className="sm:hidden p-4 pt-2 space-y-3">
-              {dash.recent.map((j) => (
-                <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                  className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-sky-500/10" : "border-line"}`}>
-                  <div className="flex justify-between gap-2">
-                    <span className="flex items-start gap-2">
-                      <input type="checkbox" className="w-4 h-4 accent-[#0284C7] mt-1 shrink-0" style={{ width: "auto" }}
-                        checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} />
-                      <strong>{j.customer_name}</strong>
-                    </span>
-                    {statusPill(j.status)}
-                  </div>
-                  <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
-                  <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
-                  {remainingOf(j) > 0 && <div className="text-sm font-bold text-orange-400 mt-1">Sisa: {fmtRp(remainingOf(j))}</div>}
-                </div>
-              ))}
-              {!dash.recent.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
-            </div>
-            <div className="hidden sm:block overflow-x-auto p-4 pt-2">
-              <table className="w-full text-sm min-w-[560px]">
-                <thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">Tanggal</th><th className="py-2 pr-3">Pelanggan</th><th className="py-2 pr-3">Jasa</th><th className="py-2 pr-3">Nominal</th><th className="py-2">Status</th></tr></thead>
-                <tbody>
-                  {dash.recent.map((j) => (
-                    <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                      className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-sky-500/10" : ""}`}>
-                      <td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td>
-                      <td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status)}</td>
-                    </tr>
-                  ))}
-                  {!dash.recent.length && <tr><td colSpan="5" className="py-4 text-zinc-400">Belum ada transaksi.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </section>
         </div>
       )}
 
