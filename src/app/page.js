@@ -1428,44 +1428,43 @@ export default function Home() {
   );
 
   return (
-    <main className="max-w-5xl mx-auto px-4 pt-4 pb-32">
-      {tab === "dashboard" ? (
-        <header className="rounded-[28px] p-4 sm:p-5 text-white shadow-lg shadow-sky-900/20" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
-          <div className="flex items-center gap-3">
+    <>
+      {tab === "dashboard" && (
+        <header className="w-full text-white" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
+          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
             <div className="relative shrink-0">
               <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
-                className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/60 bg-white/15 flex items-center justify-center">
+                className="w-11 h-11 rounded-full overflow-hidden border-2 border-white/60 bg-white/15 flex items-center justify-center">
                 {settings.business_logo ? (
                   <img src={settings.business_logo} alt="Logo perusahaan" className="w-full h-full object-cover" />
                 ) : (
-                  <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-white">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-white">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
                   </svg>
                 )}
               </button>
               {profileMenu("left")}
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm">Selamat datang,</p>
-              <h1 className="font-black text-lg sm:text-xl leading-tight truncate">{activeBusiness?.name || settings.business_name || username}</h1>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <p className="min-w-0 flex-1 text-[15px] leading-tight truncate">Selamat datang, <span className="font-bold">{activeBusiness?.name || settings.business_name || username}</span></p>
+            <div className="flex items-center shrink-0">
               <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
                 aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
                 title={theme === "dark" ? "Mode terang" : "Mode gelap"}
-                className="w-11 h-11 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center shrink-0">
+                className="w-11 h-11 rounded-full hover:bg-white/15 flex items-center justify-center">
                 {theme === "dark"
                   ? icon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
                   : icon(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)}
               </button>
               <button type="button" onClick={() => openSettings("pengaturan")} aria-label="Pengaturan" title="Pengaturan"
-                className="w-11 h-11 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center shrink-0">
+                className="w-11 h-11 rounded-full hover:bg-white/15 flex items-center justify-center">
                 {icon(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></>)}
               </button>
             </div>
           </div>
         </header>
-      ) : (
+      )}
+      <main className="max-w-5xl mx-auto px-4 pt-4 pb-48">
+      {tab !== "dashboard" && (
       <header className="flex justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <AppLogo size={44} theme={theme} />
@@ -2536,5 +2535,6 @@ export default function Home() {
         {dockBtn("reports", "Laporan", icon(<><path d="M4 20V10M10 20V4M16 20v-8M22 20H2" /></>))}
       </nav>
     </main>
+    </>
   );
 }
