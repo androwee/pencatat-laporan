@@ -8,8 +8,20 @@ const todayWib = () => {
   return d.toISOString().slice(0, 10);
 };
 
+const BUSINESS_KEY = "pencatat-business";
+
+function storedBusinessId() {
+  try { return localStorage.getItem(BUSINESS_KEY) || ""; } catch { return ""; }
+}
+
 async function api(path, options = {}) {
-  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
+  let url = path;
+  const bid = storedBusinessId();
+  const scoped = bid && path.startsWith("/api/")
+    && !path.startsWith("/api/me") && !path.startsWith("/api/businesses")
+    && !path.startsWith("/api/auth") && !path.startsWith("/api/login") && !path.startsWith("/api/logout");
+  if (scoped) url = path + (path.includes("?") ? "&" : "?") + "business_id=" + encodeURIComponent(bid);
+  const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...options });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Gagal memuat ${path}`);
   return data;
@@ -118,6 +130,12 @@ export default function Home() {
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedJobs, setSelectedJobs] = useState([]);
   const [detailJob, setDetailJob] = useState(null);
+  const [businesses, setBusinesses] = useState([]);
+  const [activeBusiness, setActiveBusiness] = useState(null);
+  const [authKind, setAuthKind] = useState("");
+  const [showBusinessModal, setShowBusinessModal] = useState(false);
+  const [businessForm, setBusinessForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", bank_name: "", bank_account_number: "", bank_account_holder: "" });
+  const [businessError, setBusinessError] = useState("");
   const [invoicePreview, setInvoicePreview] = useState(null);
   const [historyCustomer, setHistoryCustomer] = useState(null);
   const [historyJobs, setHistoryJobs] = useState(null);
@@ -264,6 +282,14 @@ export default function Home() {
       try {
         const me = await api("/api/me");
         setUsername(me.username);
+        setAuthKind(me.auth || "");
+        const list = me.businesses || [];
+        setBusinesses(list);
+        if (!list.length) { setView("onboarding"); return; }
+        const stored = storedBusinessId();
+        const active = list.find((b) => String(b.id) === String(stored)) || list[0];
+        try { localStorage.setItem(BUSINESS_KEY, String(active.id)); } catch {}
+        setActiveBusiness(active);
         setView("app");
         loadDashboard();
         loadCustomers();
@@ -324,18 +350,30 @@ export default function Home() {
     setLoginError("");
     try {
       await api("/api/login", { method: "POST", body: JSON.stringify(loginForm) });
-      const me = await api("/api/me");
-      setUsername(me.username);
-      setView("app");
-      loadDashboard();
-      loadCustomers();
-      loadSettings();
+      location.reload();
     } catch (err) { setLoginError(err.message); }
   };
 
   const handleLogout = async () => {
     await api("/api/logout", { method: "POST" }).catch(() => {});
+    try { localStorage.removeItem(BUSINESS_KEY); } catch {}
     location.reload();
+  };
+
+  const switchBusiness = (id) => {
+    try { localStorage.setItem(BUSINESS_KEY, String(id)); } catch {}
+    location.reload();
+  };
+
+  const submitBusiness = async (e) => {
+    e.preventDefault();
+    setBusinessError("");
+    try {
+      const data = await api("/api/businesses", { method: "POST", body: JSON.stringify(businessForm) });
+      try { localStorage.setItem(BUSINESS_KEY, String(data.business.id)); } catch {}
+      setShowBusinessModal(false);
+      location.reload();
+    } catch (err) { setBusinessError(err.message); }
   };
 
   // Cadangan data: unduh satu file JSON berisi pelanggan, transaksi
@@ -1032,6 +1070,15 @@ export default function Home() {
               <p className="text-zinc-400 -mt-1">Silakan masuk untuk melanjutkan.</p>
             </div>
             <div className="bg-panel border border-line rounded-[28px] p-6 mt-6 shadow-xl">
+              {typeof window !== "undefined" && new URLSearchParams(window.location.search).get("auth_error") && (
+                <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm mb-4">{new URLSearchParams(window.location.search).get("auth_error")}</p>
+              )}
+              <a href="/api/auth/google" className="w-full bg-white text-black font-bold py-3.5 rounded-full flex items-center justify-center gap-2">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47a5.53 5.53 0 0 1-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z" /><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09A12 12 0 0 0 12 24z" /><path fill="#FBBC05" d="M5.27 14.29A7.2 7.2 0 0 1 4.89 12c0-.8.14-1.57.38-2.29V6.62H1.29a12 12 0 0 0 0 10.76l3.98-3.09z" /><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42A11.98 11.98 0 0 0 12 0 12 12 0 0 0 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z" /></svg>
+                Login dengan Google
+              </a>
+              <p className="text-zinc-400 text-xs text-center mt-3">Pendaftaran terbuka: siapa pun dengan akun Google bisa daftar dan membuat usaha sendiri. Data tiap usaha terpisah.</p>
+              <div className="flex items-center gap-3 my-4"><span className="flex-1 border-t border-line" /><span className="text-zinc-400 text-xs">atau login lama</span><span className="flex-1 border-t border-line" /></div>
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none">
@@ -1059,9 +1106,45 @@ export default function Home() {
                 {loginError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{loginError}</p>}
                 <button type="submit" className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Masuk</button>
               </form>
-              <p className="text-zinc-400 text-xs text-center mt-4">Akun diatur lewat environment variable di Cloudflare, bukan dari database.</p>
+              <p className="text-zinc-400 text-xs text-center mt-4">Login password lama hanya untuk akun admin lama. Pemilik usaha baru masuk dengan Google.</p>
             </div>
             <p className="text-zinc-400 text-xs text-center mt-4">Pencatat Laporan — Pencatat Pelanggan Jasa</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (view === "onboarding") {
+    return (
+      <main className="min-h-screen flex flex-col px-4 pb-16">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-full max-w-sm">
+            <div className="flex flex-col items-center text-center gap-3">
+              <AppLogo size={96} theme={theme} />
+              <h1 className="font-bold text-3xl tracking-tight">Buat profil usaha</h1>
+              <p className="text-zinc-400 -mt-1">Akun Google kamu sudah terhubung. Isi nama usahamu untuk mulai mencatat pelanggan dan transaksi.</p>
+            </div>
+            <div className="bg-panel border border-line rounded-[28px] p-6 mt-6 shadow-xl">
+              <form onSubmit={submitBusiness} className="space-y-4">
+                <div>
+                  <label className="font-bold text-sm">Nama usaha *</label>
+                  <input className="mt-1" required placeholder="cth: Jasa Sedot WC Andro"
+                    value={businessForm.business_name} onChange={(e) => setBusinessForm({ ...businessForm, business_name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="font-bold text-sm">Alamat</label>
+                  <input className="mt-1" value={businessForm.business_address} onChange={(e) => setBusinessForm({ ...businessForm, business_address: e.target.value })} />
+                </div>
+                <div>
+                  <label className="font-bold text-sm">No. telepon / WhatsApp</label>
+                  <input className="mt-1" inputMode="tel" value={businessForm.business_phone} onChange={(e) => setBusinessForm({ ...businessForm, business_phone: e.target.value })} />
+                </div>
+                {businessError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{businessError}</p>}
+                <button type="submit" className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Buat usaha</button>
+              </form>
+              <button type="button" onClick={handleLogout} className="w-full text-center text-sm text-zinc-400 mt-4">Keluar</button>
+            </div>
           </div>
         </div>
       </main>
@@ -1111,6 +1194,17 @@ export default function Home() {
               <button aria-label="Tutup menu profil" onClick={() => { setInstallHelp(false); setShowProfileMenu(false); }} className="fixed inset-0 z-40 cursor-default" />
               <div className="absolute right-0 top-full mt-2 w-56 bg-panel border border-line rounded-2xl shadow-2xl p-2 z-50">
                 <p className="text-xs text-zinc-400 px-3 py-2">Login sebagai {username}</p>
+                {activeBusiness && <p className="text-xs text-zinc-400 px-3 pb-1">Usaha: <span className="text-white font-bold">{activeBusiness.name}</span></p>}
+                {businesses.length > 1 && businesses.map((b) => (
+                  <button key={b.id} type="button" onClick={() => switchBusiness(b.id)} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">{b.id === activeBusiness?.id ? "✓ " : ""}{b.name}</button>
+                ))}
+                {businesses.length > 1 && <div className="border-t border-line my-1" />}
+                {authKind === "google" && (
+                  <button type="button" onClick={() => { setShowProfileMenu(false); setBusinessForm({ business_name: "", business_address: "", business_phone: "", business_website: "", bank_name: "", bank_account_number: "", bank_account_holder: "" }); setBusinessError(""); setShowBusinessModal(true); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">+ Tambah usaha</button>
+                )}
+                {authKind === "password" && (
+                  <a href="/api/auth/google?mode=link" className="block w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Hubungkan akun Google</a>
+                )}
                 <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("profil"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Profil</button>
                 <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("pengaturan"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Pengaturan</button>
                 <div className="border-t border-line my-1" />
@@ -1934,6 +2028,28 @@ export default function Home() {
         </Modal>
         );
       })()}
+
+      {showBusinessModal && (
+        <Modal title="Tambah usaha" onClose={() => setShowBusinessModal(false)}>
+          <form onSubmit={submitBusiness} className="space-y-4">
+            <div>
+              <label className="font-bold text-sm">Nama usaha *</label>
+              <input className="mt-1" required placeholder="cth: Jasa Sedot WC Andro"
+                value={businessForm.business_name} onChange={(e) => setBusinessForm({ ...businessForm, business_name: e.target.value })} />
+            </div>
+            <div>
+              <label className="font-bold text-sm">Alamat</label>
+              <input className="mt-1" value={businessForm.business_address} onChange={(e) => setBusinessForm({ ...businessForm, business_address: e.target.value })} />
+            </div>
+            <div>
+              <label className="font-bold text-sm">No. telepon / WhatsApp</label>
+              <input className="mt-1" inputMode="tel" value={businessForm.business_phone} onChange={(e) => setBusinessForm({ ...businessForm, business_phone: e.target.value })} />
+            </div>
+            {businessError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{businessError}</p>}
+            <button type="submit" className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Buat usaha</button>
+          </form>
+        </Modal>
+      )}
 
       <nav className="fixed left-1/2 -translate-x-1/2 bottom-4 z-50 flex items-end gap-1 bg-panel border border-line rounded-full px-1.5 py-1.5 shadow-2xl shadow-black/60 w-[calc(100vw-24px)] max-w-md" aria-label="Navigasi utama">
         {dockBtn("dashboard", "Dashboard", icon(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>))}
