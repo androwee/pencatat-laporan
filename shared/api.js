@@ -121,14 +121,18 @@ let ensuredJobItems = false;
 
 async function ensureMultiTenant(env) {
   if (ensuredMultiTenant) return;
-  await qRun(env, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, google_sub TEXT UNIQUE, email TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', picture TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)");
-  await qRun(env, "CREATE TABLE IF NOT EXISTS businesses (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_user_id INTEGER, legacy INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', logo TEXT NOT NULL DEFAULT '', bank_name TEXT NOT NULL DEFAULT '', bank_account_number TEXT NOT NULL DEFAULT '', bank_account_holder TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
-  for (const table of ["customers", "jobs", "service_prices"]) {
-    try { await qRun(env, `ALTER TABLE ${table} ADD COLUMN business_id INTEGER NOT NULL DEFAULT 0`); } catch {}
-  }
-  for (const [table, index] of [["customers", "idx_customers_business"], ["jobs", "idx_jobs_business"], ["service_prices", "idx_prices_business"]]) {
-    try { await qRun(env, `CREATE INDEX IF NOT EXISTS ${index} ON ${table}(business_id)`); } catch {}
-  }
+  // Pernyataan DDL-nya saling bebas (tabel & indeks berbeda) jadi
+  // dijalankan paralel, bukan satu-satu: ~9 round trip D1 berurutan
+  // menjadi 1 batch paralel. ALTER yang gagal (kolom sudah ada) ditelan
+  // per pernyataan supaya tidak menggagalkan yang lain.
+  await Promise.all([
+    qRun(env, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, google_sub TEXT UNIQUE, email TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', picture TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)"),
+    qRun(env, "CREATE TABLE IF NOT EXISTS businesses (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_user_id INTEGER, legacy INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', logo TEXT NOT NULL DEFAULT '', bank_name TEXT NOT NULL DEFAULT '', bank_account_number TEXT NOT NULL DEFAULT '', bank_account_holder TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
+    ...["customers", "jobs", "service_prices"].map((table) =>
+      qRun(env, `ALTER TABLE ${table} ADD COLUMN business_id INTEGER NOT NULL DEFAULT 0`).catch(() => {})),
+    ...[["customers", "idx_customers_business"], ["jobs", "idx_jobs_business"], ["service_prices", "idx_prices_business"]].map(([table, index]) =>
+      qRun(env, `CREATE INDEX IF NOT EXISTS ${index} ON ${table}(business_id)`)),
+  ]);
   // Migrasi sekali: data lama (business_id 0) dipindah ke satu usaha
   // legacy yang profilnya diambil dari tabel settings.
   const existing = await qFirst(env, "SELECT id FROM businesses LIMIT 1");
