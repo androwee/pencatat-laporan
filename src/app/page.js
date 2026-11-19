@@ -119,7 +119,6 @@ export default function Home() {
   const [selectedJobs, setSelectedJobs] = useState([]);
   const [detailJob, setDetailJob] = useState(null);
   const [invoicePreview, setInvoicePreview] = useState(null);
-  const invoicePreviewRef = useRef(null);
   const [historyCustomer, setHistoryCustomer] = useState(null);
   const [historyJobs, setHistoryJobs] = useState(null);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
@@ -874,20 +873,20 @@ export default function Home() {
       }
       y += 6;
       doc.setFontSize(10); doc.text("Invoice ini dibuat dari aplikasi Pencatat Laporan.", 14, y);
-      // Watermark LUNAS: hanya untuk transaksi lunas, miring dari pojok
-      // ke pojok (diagonal halaman A4), di atas isi invoice.
-      if (job.status === "lunas") {
-        try { doc.setGState(new doc.GState({ opacity: 0.13 })); } catch { /* jsPDF tanpa GState: lanjut dengan warna merah */ }
-        doc.setTextColor(230, 0, 18);
+      // Watermark di tengah dokumen, orientasi normal (tidak miring):
+      // LUNAS merah bila sudah lunas, BELUM LUNAS abu-abu bila belum lunas.
+      {
+        const wmIsLunas = job.status === "lunas";
+        const wmText = wmIsLunas ? "LUNAS" : "BELUM LUNAS";
+        try { doc.setGState(new doc.GState({ opacity: wmIsLunas ? 0.13 : 0.16 })); } catch { /* jsPDF tanpa GState: lanjut dengan warna */ }
+        if (wmIsLunas) doc.setTextColor(230, 0, 18); else doc.setTextColor(150, 150, 150);
         doc.setFont("helvetica", "bold");
-        let wmSize = 90;
+        let wmSize = 70;
         doc.setFontSize(wmSize);
-        const wmWidth = doc.getTextWidth("LUNAS") || 1;
-        // Target lebar 170mm (sekitar 140pt): teruji utuh di tengah halaman.
-        // Lebih besar dari itu hurufnya terpotong tepi halaman.
-        wmSize = Math.min(140, Math.max(60, wmSize * 170 / wmWidth));
+        const wmWidth = doc.getTextWidth(wmText) || 1;
+        wmSize = Math.min(wmIsLunas ? 80 : 60, Math.max(40, wmSize * 150 / wmWidth));
         doc.setFontSize(wmSize);
-        doc.text("LUNAS", 105, 148.5, { align: "center", angle: -54.7 });
+        doc.text(wmText, 105, 150, { align: "center" });
         try { doc.setGState(new doc.GState({ opacity: 1 })); } catch { /* abaikan */ }
         doc.setTextColor(0, 0, 0);
       }
@@ -901,57 +900,26 @@ export default function Home() {
     } catch (err) { setError(`Gagal membuat invoice: ${err.message}`); }
   };
 
-  const previewInvoice = async (job) => {
-    try {
-      const doc = await buildInvoiceDoc(job);
-      const pdfData = doc.output("arraybuffer");
-      const url = URL.createObjectURL(new Blob([pdfData], { type: "application/pdf" }));
-      setInvoicePreview({ url, pdfData, job });
-    } catch (err) { setError(`Gagal membuat preview invoice: ${err.message}`); }
+  // Preview invoice sebagai HTML (instan, tanpa unduh apa-apa): PDF.js
+  // terlalu berat di koneksi lambat dan canvas-nya melebar di HP, jadi
+  // isi invoice ditampilkan langsung dari data yang sudah dimuat.
+  // PDF aslinya tetap dipakai untuk Unduh / Kirim WA / Buka di PDF viewer.
+  const previewInvoice = (job) => {
+    setDetailJob(null);
+    setInvoicePreview({ job });
   };
 
   const closeInvoicePreview = () => {
-    if (invoicePreview?.url) { try { URL.revokeObjectURL(invoicePreview.url); } catch { /* abaikan */ } }
     setInvoicePreview(null);
   };
 
-  // Render PDF preview ke canvas di dalam aplikasi (PDF.js). Chrome Android
-  // tidak menampilkan PDF inline di <iframe> blob URL — hanya tombol "Buka" —
-  // jadi preview digambar langsung ke canvas supaya isinya terlihat.
-  useEffect(() => {
-    if (!invoicePreview) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const pdfjs = await import("pdfjs-dist");
-        const loadingTask = pdfjs.getDocument({
-          data: invoicePreview.pdfData.slice(0),
-          disableWorker: true,
-          standardFontDataUrl: "/pdfjs-standard-fonts/",
-        });
-        const pdf = await loadingTask.promise;
-        if (cancelled) return;
-        const container = invoicePreviewRef.current;
-        if (!container) return;
-        container.innerHTML = "";
-        for (let p = 1; p <= pdf.numPages; p++) {
-          const page = await pdf.getPage(p);
-          const viewport = page.getViewport({ scale: 1.6 });
-          const canvas = document.createElement("canvas");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          canvas.style.width = "100%";
-          canvas.style.height = "auto";
-          canvas.style.display = "block";
-          if (p > 1) canvas.style.marginTop = "8px";
-          container.appendChild(canvas);
-          await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-          if (cancelled) return;
-        }
-      } catch (err) { setError(`Gagal menampilkan preview invoice: ${err.message}`); }
-    })();
-    return () => { cancelled = true; };
-  }, [invoicePreview]);
+  const openPdfViewer = async (job) => {
+    try {
+      const doc = await buildInvoiceDoc(job);
+      const url = doc.output("bloburl");
+      window.open(url, "_blank", "noopener");
+    } catch (err) { setError(`Gagal membuka PDF: ${err.message}`); }
+  };
 
   const markJobPaid = async (job, after) => {
     const remaining = remainingOf(job);
@@ -1906,17 +1874,66 @@ export default function Home() {
         </Modal>
       )}
 
-      {invoicePreview && (
+      {invoicePreview && (() => {
+        const job = invoicePreview.job;
+        const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
+        const statusLabel = job.status === "lunas" ? "Lunas" : job.status === "dp" ? "DP" : "Belum bayar";
+        const invNo = `INV-${String(job.job_date).replaceAll("-", "")}-${String(job.id).padStart(4, "0")}`;
+        const invItems = job.items?.length
+          ? job.items
+          : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: job.amount, amount: job.amount }];
+        const paid = Number(job.paid_amount || 0);
+        const remaining = Math.max(0, Number(job.amount) - paid);
+        const isLunas = job.status === "lunas";
+        return (
         <Modal title="Preview Invoice" onClose={closeInvoicePreview}>
-          <div ref={invoicePreviewRef} className="border border-line rounded-xl overflow-hidden bg-white min-h-[200px]" />
+          <div className="relative bg-white text-black rounded-xl overflow-hidden border border-line text-sm">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+              <span className={`font-bold tracking-wide whitespace-nowrap select-none ${isLunas ? "text-[#e60012]/15 text-4xl" : "text-zinc-400/30 text-3xl"}`}>{isLunas ? "LUNAS" : "BELUM LUNAS"}</span>
+            </div>
+            <div className="relative z-10 p-4">
+              <div className="flex gap-3 items-start">
+                {settings.business_logo && <img src={settings.business_logo} alt="" className="w-14 h-14 object-contain shrink-0" />}
+                <div className="min-w-0">
+                  <p className="font-bold text-base leading-tight">{settings.business_name || "Pencatat Laporan"}</p>
+                  {settings.business_address && <p className="text-xs text-zinc-600">{settings.business_address}</p>}
+                  {settings.business_phone && <p className="text-xs text-zinc-600">{settings.business_phone}</p>}
+                  {settings.business_website && <p className="text-xs text-zinc-600">{settings.business_website}</p>}
+                </div>
+              </div>
+              <div className="border-t-2 border-[#e60012] my-3" />
+              <p className="font-bold text-base">INVOICE</p>
+              <p className="text-xs mt-1">Nomor: {invNo}</p>
+              <p className="text-xs">Tanggal: {job.job_date}</p>
+              <p className="text-xs">Status: {statusLabel}</p>
+              <p className="font-bold text-xs mt-3">Ditagihkan kepada:</p>
+              <p className="text-xs">{job.customer_name || customer.name || ""}{customer.phone ? ` (${customer.phone})` : job.customer_phone ? ` (${job.customer_phone})` : ""}</p>
+              {customer.address && <p className="text-xs">{customer.address}</p>}
+              <table className="w-full text-xs mt-3">
+                <thead><tr className="border-b border-zinc-300 text-left"><th className="py-1 pr-2">Layanan</th><th className="py-1 pr-2">Jumlah</th><th className="py-1 pr-2">Harga satuan</th><th className="py-1 text-right">Subtotal</th></tr></thead>
+                <tbody>
+                  {invItems.map((it, i) => (
+                    <tr key={i} className="border-b border-zinc-200 align-top"><td className="py-1.5 pr-2">{it.service_type}</td><td className="py-1.5 pr-2 whitespace-nowrap">{fmtQty(it.qty)} {it.unit || ""}</td><td className="py-1.5 pr-2 whitespace-nowrap">{fmtRp(it.unit_price)}</td><td className="py-1.5 text-right whitespace-nowrap">{fmtRp(it.amount)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="flex justify-between font-bold mt-3"><span>Total</span><span>{fmtRp(job.amount)}</span></div>
+              {paid > 0 && <p className="text-xs mt-2">Sudah dibayar: {fmtRp(paid)}</p>}
+              {remaining > 0 && <p className="text-xs font-bold">Sisa tagihan: {fmtRp(remaining)}</p>}
+              {job.note && <p className="text-xs mt-2">Catatan: {job.note}</p>}
+              {settings.bank_name && settings.bank_account_number && <p className="text-xs font-bold mt-2">Pembayaran via transfer: {settings.bank_name} {settings.bank_account_number}{settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}</p>}
+              <p className="text-[11px] text-zinc-500 mt-3">Invoice ini dibuat dari aplikasi Pencatat Laporan.</p>
+            </div>
+          </div>
           <div className="mt-4 space-y-2">
-            <button onClick={() => window.open(invoicePreview.url, "_blank", "noopener")} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Buka di PDF viewer</button>
+            <button onClick={() => openPdfViewer(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Buka di PDF viewer</button>
             <button onClick={() => downloadInvoice(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
             <button onClick={() => { const j = invoicePreview.job; closeInvoicePreview(); sendInvoiceWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">Kirim via WhatsApp</button>
             <button onClick={closeInvoicePreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tutup preview</button>
           </div>
         </Modal>
-      )}
+        );
+      })()}
 
       <nav className="fixed left-1/2 -translate-x-1/2 bottom-4 z-50 flex items-end gap-1 bg-panel border border-line rounded-full px-1.5 py-1.5 shadow-2xl shadow-black/60 w-[calc(100vw-24px)] max-w-md" aria-label="Navigasi utama">
         {dockBtn("dashboard", "Dashboard", icon(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>))}
