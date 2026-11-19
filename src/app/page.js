@@ -1430,7 +1430,7 @@ export default function Home() {
   return (
     <>
       {tab === "dashboard" && (
-        <header className="w-full text-white" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
+        <header className="w-full text-white rounded-b-[28px]" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
             <div className="relative shrink-0">
               <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
@@ -1497,11 +1497,11 @@ export default function Home() {
       {error && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm mt-4">{error}</p>}
 
       {tab === "dashboard" && dash && (
-        <div className="mt-5 space-y-5">
+        <div className="space-y-5">
           {/* Kartu ringkasan ala Moni: angka besar di tengah kartu panel
             (putih di mode terang), dua kolom ringkasan di bawahnya, lalu
             tombol aksi utama. Sapaan sudah pindah ke header biru di atas. */}
-          <section className="bg-panel border border-line rounded-[28px] p-5 sm:p-6 shadow">
+          <section className="relative -mt-8 bg-panel border border-line rounded-[28px] p-5 sm:p-6 shadow">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm text-zinc-400">Pemasukan bulan ini</p>
               <span className="inline-flex items-center gap-1.5 bg-sky-500/10 text-sky-600 text-xs font-bold px-3 py-1.5 rounded-full shrink-0">
@@ -1522,6 +1522,44 @@ export default function Home() {
             </div>
             <button onClick={() => openJobModal(null)} className="w-full mt-5 bg-persona hover:bg-persona-dark text-white font-bold py-3 rounded-full text-sm transition-transform duration-150 active:scale-[0.98]">+ Tambah transaksi</button>
           </section>
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="Total pelanggan" value={dash.customers} icon={icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>)} />
+            <Stat label="Total transaksi" value={dash.jobs} icon={icon(<><path d="M5 3h14v18H5z" /><path d="M8 7h8M8 11h8M8 15h5" /></>)} />
+          </div>
+          {dash.outstanding > 0 && (
+            <div className="bg-orange-500/10 border border-orange-500/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
+              <span className="font-bold">Total piutang: {fmtRp(dash.outstanding)}</span>
+              <span className="text-sm text-zinc-400">{dash.outstandingCount} transaksi belum lunas</span>
+              <button onClick={openPiutang} className="bg-persona px-4 py-2 rounded-xl font-bold text-sm">Lihat piutang</button>
+            </div>
+          )}
+          {(dash?.schedules || []).length > 0 && (
+            <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
+              <h3 className="font-bold">Jadwal kunjungan berikutnya</h3>
+              {scheduleGroups.map((g) => (
+                <div key={g.key}>
+                  <div className="text-sm text-zinc-400 mb-1">{g.title}</div>
+                  <div className="space-y-2">
+                    {g.list.map((c) => (
+                      <div key={c.id} className="flex justify-between gap-2 text-sm border border-line rounded-xl p-3">
+                        <div>
+                          <button onClick={() => openHistory(c)} className="font-bold underline-offset-2 hover:underline text-left">{c.name}</button>
+                          <div className="text-zinc-400">{c.next_visit_date}{c.phone ? ` · ${c.phone}` : ""}</div>
+                        </div>
+                        <button onClick={() => clearSchedule(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">Selesai</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-zinc-400">Ketuk nama pelanggan untuk melihat riwayatnya. Atur atau ubah jadwal dari Pelanggan → Edit.</p>
+            </div>
+          )}
+          <div className="grid md:grid-cols-2 gap-4">
+            <Card title="Tren pemasukan (10 tanggal terakhir)"><BarChart labels={dash.trendDates} values={dash.trendValues} onSelect={(date) => openJobsForDate(date)} /></Card>
+            <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} onSelect={(part) => openJobsForStatus(part.label)} /></Card>
+          </div>
+          <p className="text-xs text-zinc-400">Ketuk batang grafik atau potongan donat untuk melihat transaksinya, dan ketuk kotak transaksi untuk melihat detailnya.</p>
           {selectedJobs.length > 0 && (
             <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
               <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
@@ -1571,44 +1609,6 @@ export default function Home() {
               </table>
             </div>
           </section>
-          <div className="grid grid-cols-2 gap-3">
-            <Stat label="Total pelanggan" value={dash.customers} icon={icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>)} />
-            <Stat label="Total transaksi" value={dash.jobs} icon={icon(<><path d="M5 3h14v18H5z" /><path d="M8 7h8M8 11h8M8 15h5" /></>)} />
-          </div>
-          {dash.outstanding > 0 && (
-            <div className="bg-orange-500/10 border border-orange-500/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
-              <span className="font-bold">Total piutang: {fmtRp(dash.outstanding)}</span>
-              <span className="text-sm text-zinc-400">{dash.outstandingCount} transaksi belum lunas</span>
-              <button onClick={openPiutang} className="bg-persona px-4 py-2 rounded-xl font-bold text-sm">Lihat piutang</button>
-            </div>
-          )}
-          {(dash?.schedules || []).length > 0 && (
-            <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
-              <h3 className="font-bold">Jadwal kunjungan berikutnya</h3>
-              {scheduleGroups.map((g) => (
-                <div key={g.key}>
-                  <div className="text-sm text-zinc-400 mb-1">{g.title}</div>
-                  <div className="space-y-2">
-                    {g.list.map((c) => (
-                      <div key={c.id} className="flex justify-between gap-2 text-sm border border-line rounded-xl p-3">
-                        <div>
-                          <button onClick={() => openHistory(c)} className="font-bold underline-offset-2 hover:underline text-left">{c.name}</button>
-                          <div className="text-zinc-400">{c.next_visit_date}{c.phone ? ` · ${c.phone}` : ""}</div>
-                        </div>
-                        <button onClick={() => clearSchedule(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">Selesai</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <p className="text-xs text-zinc-400">Ketuk nama pelanggan untuk melihat riwayatnya. Atur atau ubah jadwal dari Pelanggan → Edit.</p>
-            </div>
-          )}
-          <div className="grid md:grid-cols-2 gap-4">
-            <Card title="Tren pemasukan (10 tanggal terakhir)"><BarChart labels={dash.trendDates} values={dash.trendValues} onSelect={(date) => openJobsForDate(date)} /></Card>
-            <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} onSelect={(part) => openJobsForStatus(part.label)} /></Card>
-          </div>
-          <p className="text-xs text-zinc-400">Ketuk batang grafik atau potongan donat untuk melihat transaksinya, dan ketuk kotak transaksi untuk melihat detailnya.</p>
         </div>
       )}
 
