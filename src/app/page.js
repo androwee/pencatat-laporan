@@ -1430,8 +1430,8 @@ export default function Home() {
   return (
     <>
       {tab === "dashboard" && (
-        <header className="w-full text-white" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+        <header className="w-full text-white rounded-b-[28px]" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
+          <div className="max-w-5xl mx-auto px-4 pt-3 pb-20 flex items-center gap-3">
             <div className="relative shrink-0">
               <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
                 className="w-11 h-11 rounded-full overflow-hidden border-2 border-white/60 bg-white/15 flex items-center justify-center">
@@ -1508,7 +1508,7 @@ export default function Home() {
           {/* Kartu ringkasan ala Moni: angka besar di tengah kartu panel
             (putih di mode terang), dua kolom ringkasan di bawahnya, lalu
             tombol aksi utama. Sapaan sudah pindah ke header biru di atas. */}
-          <section className="relative -mt-4 -mx-4 bg-panel border border-line rounded-t-[28px] p-5 sm:p-6 shadow">
+          <section className="relative -mt-20 -mx-4 bg-panel border border-line rounded-t-[28px] p-5 sm:p-6 shadow">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm text-zinc-400">Pemasukan bulan ini</p>
               <span className="inline-flex items-center gap-1.5 bg-sky-500/10 text-sky-600 text-xs font-bold px-3 py-1.5 rounded-full shrink-0">
