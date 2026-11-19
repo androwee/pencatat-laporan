@@ -65,6 +65,11 @@ input[type="month"]::-webkit-calendar-picker-indicator {
    latar halaman, supaya hanya lengkung atasnya yang terlihat saat menimpa header. */
 .sheet-bg { background: #0a0a0a; }
 .theme-light .sheet-bg { background: #f4f5f7; }
+
+/* Angka kartu ringkasan: biru di mode terang (ala Moni), putih di mode gelap
+   supaya kontras di atas kartu gelap. */
+.dash-num { color: #ffffff; }
+.theme-light .dash-num { color: #0284C7; }
 .theme-light .bg-panel {
   background: #ffffff;
 }

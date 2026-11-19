@@ -1487,25 +1487,25 @@ export default function Home() {
                 {monthLabel}
               </span>
             </div>
-            <p className="font-black text-4xl sm:text-[2.75rem] leading-tight tracking-tight text-sky-600 mt-1">{fmtRp(dash.month)}</p>
+            <p className="font-black text-4xl sm:text-[2.75rem] leading-tight tracking-tight dash-num mt-1">{fmtRp(dash.month)}</p>
             <div className="flex gap-8 mt-5 pt-4 border-t border-line">
               <div>
                 <p className="text-xs text-zinc-400">Hari ini</p>
-                <p className="font-bold text-lg leading-tight text-sky-600">{fmtRp(dash.today)}</p>
+                <p className="font-bold text-lg leading-tight dash-num">{fmtRp(dash.today)}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-400">Piutang</p>
-                <p className="font-bold text-lg leading-tight text-sky-600">{fmtRp(dash.outstanding)}</p>
+                <p className="font-bold text-lg leading-tight dash-num">{fmtRp(dash.outstanding)}</p>
               </div>
             </div>
             <div className="flex gap-8 mt-5 pt-4 border-t border-line">
               <div>
                 <p className="text-xs text-zinc-400">Total pelanggan</p>
-                <p className="font-bold text-lg leading-tight text-sky-600">{dash.customers}</p>
+                <p className="font-bold text-lg leading-tight dash-num">{dash.customers}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-400">Total transaksi</p>
-                <p className="font-bold text-lg leading-tight text-sky-600">{dash.jobs}</p>
+                <p className="font-bold text-lg leading-tight dash-num">{dash.jobs}</p>
               </div>
             </div>
           </section>
