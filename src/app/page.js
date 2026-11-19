@@ -137,6 +137,7 @@ export default function Home() {
   const [offerForm, setOfferForm] = useState(null);
   const [offerJob, setOfferJob] = useState(null);
   const [offerPreview, setOfferPreview] = useState(null);
+  const [offerEditField, setOfferEditField] = useState(null);
   const [historyCustomer, setHistoryCustomer] = useState(null);
   const [historyJobs, setHistoryJobs] = useState(null);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
@@ -2223,7 +2224,10 @@ export default function Home() {
               <input className="mt-2" value={offerForm.recipientAddress} onChange={(e) => setOfferForm({ ...offerForm, recipientAddress: e.target.value })} placeholder="Alamat penerima (opsional)" />
             </div>
             <div>
-              <label className="font-bold text-sm">Pembuka surat</label>
+              <div className="flex justify-between items-center gap-2">
+                <label className="font-bold text-sm">Pembuka surat</label>
+                <button type="button" onClick={() => setOfferEditField({ key: "intro", label: "Pembuka surat" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">⤢ Perbesar</button>
+              </div>
               <textarea className="mt-1" rows={7} style={{ minHeight: "168px" }} value={offerForm.intro} onChange={(e) => setOfferForm({ ...offerForm, intro: e.target.value })} />
             </div>
             <div>
@@ -2252,11 +2256,17 @@ export default function Home() {
               <button type="button" onClick={() => setOfferForm({ ...offerForm, rows: [...offerForm.rows, { service_type: "", unit: "paket", unit_price: 0, checked: true }] })} className="mt-2 bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">+ Tambah layanan</button>
             </div>
             <div>
-              <label className="font-bold text-sm">Keterangan (Ket)</label>
+              <div className="flex justify-between items-center gap-2">
+                <label className="font-bold text-sm">Keterangan (Ket)</label>
+                <button type="button" onClick={() => setOfferEditField({ key: "notes", label: "Keterangan (Ket)" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">⤢ Perbesar</button>
+              </div>
               <textarea className="mt-1" rows={3} value={offerForm.notes} onChange={(e) => setOfferForm({ ...offerForm, notes: e.target.value })} placeholder="cth: Lumpur Tinja: berasal dari toilet/wc; Lumpur Domestik: berasal dari toilet/wc, cuci tangan, dapur, dll (non-B3)" />
             </div>
             <div>
-              <label className="font-bold text-sm">Penutup surat</label>
+              <div className="flex justify-between items-center gap-2">
+                <label className="font-bold text-sm">Penutup surat</label>
+                <button type="button" onClick={() => setOfferEditField({ key: "closing", label: "Penutup surat" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">⤢ Perbesar</button>
+              </div>
               <textarea className="mt-1" rows={6} style={{ minHeight: "144px" }} value={offerForm.closing} onChange={(e) => setOfferForm({ ...offerForm, closing: e.target.value })} />
             </div>
             <div>
@@ -2273,6 +2283,27 @@ export default function Home() {
           </div>
           <p className="text-xs text-zinc-400 mt-3">Kop surat dan tarif mengikuti profil usaha aktif dan daftar harga jasa (Pengaturan). Nomor surat otomatis berurutan per usaha. Kirim via WhatsApp membagikan file PDF langsung lewat lembar berbagi perangkat; bila tidak didukung, dibuka chat wa.me ke nomor pelanggan dengan ringkasan tarif.</p>
         </Modal>
+      )}
+
+      {offerEditField && offerForm && (
+        <div className="fixed inset-0 z-[70] bg-panel flex flex-col" role="dialog" aria-modal="true" aria-label={offerEditField.label}>
+          <div className="flex justify-between items-center gap-3 p-4 border-b border-line shrink-0">
+            <h2 className="font-bold text-lg">{offerEditField.label}</h2>
+            <button onClick={() => setOfferEditField(null)} aria-label="Tutup editor" className="bg-zinc-800 w-9 h-9 rounded-full font-bold shrink-0">×</button>
+          </div>
+          <div className="flex-1 min-h-0 p-4">
+            <textarea
+              className="w-full h-full"
+              style={{ resize: "none" }}
+              value={offerForm[offerEditField.key]}
+              onChange={(e) => setOfferForm({ ...offerForm, [offerEditField.key]: e.target.value })}
+              autoFocus
+            />
+          </div>
+          <div className="p-4 pt-0 shrink-0">
+            <button onClick={() => setOfferEditField(null)} className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Selesai</button>
+          </div>
+        </div>
       )}
 
       {offerPreview && (() => {
