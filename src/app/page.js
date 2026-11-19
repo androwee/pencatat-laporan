@@ -1462,8 +1462,7 @@ export default function Home() {
                 className="w-11 h-11 rounded-full hover:bg-white/15 flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <circle cx="12" cy="12" r="3" />
-                  <circle cx="12" cy="12" r="6.5" />
-                  <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
+                  <path d="M10.87 5.60 L10.44 3.14 A9.0 9.0 0 0 1 13.56 3.14 L13.13 5.60 A6.5 6.5 0 0 1 15.73 6.68 L17.16 4.63 A9.0 9.0 0 0 1 19.37 6.84 L17.32 8.27 A6.5 6.5 0 0 1 18.40 10.87 L20.86 10.44 A9.0 9.0 0 0 1 20.86 13.56 L18.40 13.13 A6.5 6.5 0 0 1 17.32 15.73 L19.37 17.16 A9.0 9.0 0 0 1 17.16 19.37 L15.73 17.32 A6.5 6.5 0 0 1 13.13 18.40 L13.56 20.86 A9.0 9.0 0 0 1 10.44 20.86 L10.87 18.40 A6.5 6.5 0 0 1 8.27 17.32 L6.84 19.37 A9.0 9.0 0 0 1 4.63 17.16 L6.68 15.73 A6.5 6.5 0 0 1 5.60 13.13 L3.14 13.56 A9.0 9.0 0 0 1 3.14 10.44 L5.60 10.87 A6.5 6.5 0 0 1 6.68 8.27 L4.63 6.84 A9.0 9.0 0 0 1 6.84 4.63 L8.27 6.68 A6.5 6.5 0 0 1 10.87 5.60 Z" />
                 </svg>
               </button>
             </div>
