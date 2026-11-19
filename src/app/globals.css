@@ -20,7 +20,7 @@ body {
   clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
 }
 .p5-dots {
-  background-image: radial-gradient(#e60012 1px, transparent 1.5px);
+  background-image: radial-gradient(#0284C7 1px, transparent 1.5px);
   background-size: 14px 14px;
 }
 input, select, textarea {
@@ -37,9 +37,9 @@ textarea {
   resize: vertical;
 }
 input:focus, select:focus, textarea:focus {
-  outline: 2px solid #e60012;
+  outline: 2px solid #0284C7;
   outline-offset: 1px;
-  border-color: #e60012;
+  border-color: #0284C7;
 }
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="month"]::-webkit-calendar-picker-indicator {
@@ -86,6 +86,23 @@ input[type="month"]::-webkit-calendar-picker-indicator {
 }
 .theme-light .bg-zinc-800:hover {
   background: #d0d5dd;
+}
+
+/* Kontras mode terang: teks abu-abu sekunder harus tetap terbaca di
+   atas kartu putih (zinc-400/500 mentah di atas putih di bawah 4,5:1). */
+.theme-light .text-zinc-400 {
+  color: #6b7280;
+}
+.theme-light .text-zinc-500 {
+  color: #6b7280;
+}
+
+/* Trek donat: gelap halus di mode gelap, abu muda di mode terang. */
+.donut-track {
+  color: #2a2a2a;
+}
+.theme-light .donut-track {
+  color: #e5e7eb;
 }
 
 /* Tombol merah selalu bertuliskan putih, di mode gelap maupun terang.

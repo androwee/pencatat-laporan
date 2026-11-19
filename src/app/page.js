@@ -43,11 +43,14 @@ function Card({ title, children, wide }) {
   );
 }
 
-function Stat({ label, value }) {
+function Stat({ label, value, icon }) {
   return (
-    <div className="bg-panel border border-line border-l-4 border-l-persona rounded-xl p-4">
-      <span className="block text-zinc-400 text-sm">{label}</span>
-      <strong className="text-xl">{value}</strong>
+    <div className="bg-panel border border-line rounded-2xl p-4 flex items-center gap-3">
+      <span className="w-11 h-11 rounded-2xl bg-sky-500/10 text-sky-600 flex items-center justify-center shrink-0">{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-zinc-400 text-sm">{label}</span>
+        <strong className="text-xl leading-tight block truncate">{value}</strong>
+      </span>
     </div>
   );
 }
@@ -973,7 +976,6 @@ export default function Home() {
         doc.setFont("helvetica", "normal");
       }
       y += 6;
-      doc.setFontSize(10); doc.text("Invoice ini dibuat dari aplikasi Pencatat Laporan.", 14, y);
       // Watermark di tengah dokumen, orientasi normal (tidak miring):
       // LUNAS merah bila sudah lunas, BELUM LUNAS abu-abu bila belum lunas.
       {
@@ -1159,8 +1161,6 @@ export default function Home() {
     doc.setFont("helvetica", "normal");
     doc.text("(............................................)", 140, y); y += 6;
     if (form.signer) doc.text(form.signer, 140, y);
-    doc.setFontSize(10);
-    doc.text("Surat penawaran ini dibuat dari aplikasi Pencatat Laporan.", 14, 285);
     return doc;
   };
 
@@ -1389,6 +1389,9 @@ export default function Home() {
 
   const reportTrend = report ? groupByDate(report.jobs) : { dates: [], values: [] };
 
+  // Label tanggal hari ini (WIB) untuk sapaan hero dashboard.
+  const todayLabel = (() => { const [y, m, d] = todayWib().split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); })();
+
   return (
     <main className="max-w-5xl mx-auto px-4 pt-4 pb-32">
       <header className="flex justify-between items-center gap-3">
@@ -1454,14 +1457,39 @@ export default function Home() {
 
       {tab === "dashboard" && dash && (
         <div className="mt-5 space-y-5">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Stat label="Hari ini" value={fmtRp(dash.today)} />
-            <Stat label="Bulan ini" value={fmtRp(dash.month)} />
-            <Stat label="Total pelanggan" value={dash.customers} />
-            <Stat label="Total transaksi" value={dash.jobs} />
+          {/* Hero dashboard: satu titik fokus layar, angka pemasukan bulan
+            ini. Gradien biru (skema Moni) hanya di kartu ini: ia memisahkan
+            hero dari isi di bawahnya, bukan hiasan di seluruh halaman. */}
+          <section className="rounded-[28px] p-5 sm:p-6 text-white shadow-lg shadow-sky-900/20" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm">Selamat datang,</p>
+                <h2 className="font-black text-xl sm:text-2xl leading-tight">{activeBusiness?.name || settings.business_name || username}</h2>
+                <p className="text-xs mt-1">{todayLabel}</p>
+              </div>
+              <button onClick={() => openJobModal(null)} className="bg-white text-sky-700 font-bold px-4 py-2.5 rounded-full text-sm shrink-0 shadow transition-transform duration-150 active:scale-[0.97]">+ Tambah transaksi</button>
+            </div>
+            <div className="mt-5">
+              <p className="text-sm">Pemasukan bulan ini</p>
+              <p className="font-black text-4xl sm:text-[2.75rem] leading-tight tracking-tight">{fmtRp(dash.month)}</p>
+            </div>
+            <div className="flex gap-8 mt-5 pt-4 border-t border-white/25">
+              <div>
+                <p className="text-xs">Hari ini</p>
+                <p className="font-bold text-lg leading-tight">{fmtRp(dash.today)}</p>
+              </div>
+              <div>
+                <p className="text-xs">Piutang</p>
+                <p className="font-bold text-lg leading-tight">{fmtRp(dash.outstanding)}</p>
+              </div>
+            </div>
+          </section>
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="Total pelanggan" value={dash.customers} icon={icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>)} />
+            <Stat label="Total transaksi" value={dash.jobs} icon={icon(<><path d="M5 3h14v18H5z" /><path d="M8 7h8M8 11h8M8 15h5" /></>)} />
           </div>
           {dash.outstanding > 0 && (
-            <div className="bg-red-500/10 border border-persona/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="bg-orange-500/10 border border-orange-500/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
               <span className="font-bold">Total piutang: {fmtRp(dash.outstanding)}</span>
               <span className="text-sm text-zinc-400">{dash.outstandingCount} transaksi belum lunas</span>
               <button onClick={openPiutang} className="bg-persona px-4 py-2 rounded-xl font-bold text-sm">Lihat piutang</button>
@@ -1507,10 +1535,10 @@ export default function Home() {
             <div className="sm:hidden p-4 pt-2 space-y-3">
               {dash.recent.map((j) => (
                 <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                  className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-red-500/10" : "border-line"}`}>
+                  className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-sky-500/10" : "border-line"}`}>
                   <div className="flex justify-between gap-2">
                     <span className="flex items-start gap-2">
-                      <input type="checkbox" className="w-4 h-4 accent-[#e60012] mt-1 shrink-0" style={{ width: "auto" }}
+                      <input type="checkbox" className="w-4 h-4 accent-[#0284C7] mt-1 shrink-0" style={{ width: "auto" }}
                         checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} />
                       <strong>{j.customer_name}</strong>
                     </span>
@@ -1518,7 +1546,7 @@ export default function Home() {
                   </div>
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
-                  {remainingOf(j) > 0 && <div className="text-sm font-bold text-red-400 mt-1">Sisa: {fmtRp(remainingOf(j))}</div>}
+                  {remainingOf(j) > 0 && <div className="text-sm font-bold text-orange-400 mt-1">Sisa: {fmtRp(remainingOf(j))}</div>}
                 </div>
               ))}
               {!dash.recent.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
@@ -1529,7 +1557,7 @@ export default function Home() {
                 <tbody>
                   {dash.recent.map((j) => (
                     <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                      className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-red-500/10" : ""}`}>
+                      className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-sky-500/10" : ""}`}>
                       <td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td>
                       <td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status)}</td>
                     </tr>
@@ -1553,7 +1581,7 @@ export default function Home() {
           </label>
           <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }}
+              <input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }}
                 checked={customers.length > 0 && selectedCustomers.length === customers.length}
                 onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} />
               Pilih semua ({customers.length})
@@ -1570,15 +1598,15 @@ export default function Home() {
             <div className="sm:hidden p-4 space-y-3">
               {customers.map((c) => (
                 <div key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
-                  className={`border rounded-xl p-3 select-none ${selectedCustomers.includes(c.id) ? "border-persona bg-red-500/10" : "border-line"}`}>
+                  className={`border rounded-xl p-3 select-none ${selectedCustomers.includes(c.id) ? "border-persona bg-sky-500/10" : "border-line"}`}>
                   <div className="flex items-start gap-2">
-                    <input type="checkbox" className="w-4 h-4 accent-[#e60012] mt-1 shrink-0" style={{ width: "auto" }}
+                    <input type="checkbox" className="w-4 h-4 accent-[#0284C7] mt-1 shrink-0" style={{ width: "auto" }}
                       checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} />
                     <strong>{c.name}</strong>
                   </div>
                   <div className="text-zinc-400 text-sm mt-1">{c.address || "—"}</div>
                   <div className="text-sm mt-1">{c.phone || "—"}</div>
-                  {c.next_visit_date && <div className={`text-sm mt-1 ${c.next_visit_date <= todayWib() ? "text-red-400" : "text-zinc-400"}`}>Jadwal berikutnya: {c.next_visit_date}</div>}
+                  {c.next_visit_date && <div className={`text-sm mt-1 ${c.next_visit_date <= todayWib() ? "text-orange-400" : "text-zinc-400"}`}>Jadwal berikutnya: {c.next_visit_date}</div>}
                   <div className="flex gap-2 mt-3">
                     <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Riwayat</button>
                     <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
@@ -1589,11 +1617,11 @@ export default function Home() {
               {!customers.length && <p className="text-zinc-400 text-sm">Belum ada pelanggan.</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={customers.length > 0 && selectedCustomers.length === customers.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3">Jadwal berikutnya</th><th className="p-3"></th></tr></thead>
+            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }} checked={customers.length > 0 && selectedCustomers.length === customers.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3">Jadwal berikutnya</th><th className="p-3"></th></tr></thead>
               <tbody>{customers.map((c) => (
                 <tr key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
-                  className={`border-t border-line select-none ${selectedCustomers.includes(c.id) ? "bg-red-500/10" : ""}`}>
-                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td><td className={`p-3 ${c.next_visit_date && c.next_visit_date <= todayWib() ? "text-red-400" : ""}`}>{c.next_visit_date || "—"}</td>
+                  className={`border-t border-line select-none ${selectedCustomers.includes(c.id) ? "bg-sky-500/10" : ""}`}>
+                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td><td className={`p-3 ${c.next_visit_date && c.next_visit_date <= todayWib() ? "text-orange-400" : ""}`}>{c.next_visit_date || "—"}</td>
                   <td className="p-3 whitespace-nowrap">
                     <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Riwayat</button>
                     <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
@@ -1651,7 +1679,7 @@ export default function Home() {
           </div>
           <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }}
+              <input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }}
                 checked={jobs.length > 0 && selectedJobs.length === jobs.length}
                 onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} />
               Pilih semua ({jobs.length})
@@ -1668,11 +1696,11 @@ export default function Home() {
             <div className="sm:hidden p-4 space-y-3">
               {jobs.map((j) => (
                 <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                  className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-red-500/10" : "border-line"}`}>
+                  className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-sky-500/10" : "border-line"}`}>
                   <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
-                  {remainingOf(j) > 0 && <div className="text-sm font-bold text-red-400 mt-1">Sisa: {fmtRp(remainingOf(j))}</div>}
+                  {remainingOf(j) > 0 && <div className="text-sm font-bold text-orange-400 mt-1">Sisa: {fmtRp(remainingOf(j))}</div>}
                   {j.note && <div className="text-zinc-400 text-sm mt-1">{j.note}</div>}
                   <div className="flex gap-2 mt-3 flex-wrap">
                     <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Detail</button>
@@ -1685,11 +1713,11 @@ export default function Home() {
               {!jobs.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={jobs.length > 0 && selectedJobs.length === jobs.length} onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} aria-label="Pilih semua transaksi" /></th><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
+            <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }} checked={jobs.length > 0 && selectedJobs.length === jobs.length} onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} aria-label="Pilih semua transaksi" /></th><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
               <tbody>{jobs.map((j) => (
                 <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                  className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-red-500/10" : ""}`}>
-                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#e60012]" style={{ width: "auto" }} checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} /></td><td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
+                  className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-sky-500/10" : ""}`}>
+                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }} checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} /></td><td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
                   <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status)}</td>
                   <td className="p-3 whitespace-nowrap">
                     <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Detail</button>
@@ -1727,7 +1755,7 @@ export default function Home() {
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-zinc-400 text-xs">Total sisa</div>
-                  <strong className="text-red-400">{fmtRp(g.totalRemaining)}</strong>
+                  <strong className="text-orange-400">{fmtRp(g.totalRemaining)}</strong>
                 </div>
               </div>
               <div className="space-y-2">
@@ -1738,7 +1766,7 @@ export default function Home() {
                       <div className="text-zinc-400">Total {fmtRp(j.amount)} · Sudah dibayar {fmtRp(paidOf(j))}</div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="font-bold text-red-400">Sisa {fmtRp(remainingOf(j))}</div>
+                      <div className="font-bold text-orange-400">Sisa {fmtRp(remainingOf(j))}</div>
                       <button onClick={() => markJobPaid(j, () => { loadJobs({ from: "", to: "", status: "" }); loadDashboard(); })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mt-1">Tandai lunas</button>
                     </div>
                   </div>
@@ -1937,7 +1965,7 @@ export default function Home() {
                 }} />
             </label>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm">Sisa tagihan: <strong className={Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)) > 0 ? "text-red-400" : "text-emerald-400"}>{fmtRp(Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)))}</strong></span>
+              <span className="text-sm">Sisa tagihan: <strong className={Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)) > 0 ? "text-orange-400" : "text-emerald-400"}>{fmtRp(Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)))}</strong></span>
               <button type="button" onClick={() => setJobForm({ ...jobForm, paid_amount: String(jobItemsTotal), status: "lunas" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Tandai lunas</button>
             </div>
             <label className="block text-sm font-medium">Catatan
@@ -2085,7 +2113,7 @@ export default function Home() {
                 <div className="bg-panel border border-line rounded-xl p-3 space-y-1">
                   <div className="flex justify-between gap-2"><span className="text-zinc-400">Total transaksi</span><strong>{historyJobs.length} transaksi · {fmtRp(historyJobs.reduce((s, j) => s + Number(j.amount), 0))}</strong></div>
                   <div className="flex justify-between gap-2"><span className="text-zinc-400">Sudah dibayar</span><strong>{fmtRp(historyJobs.reduce((s, j) => s + paidOf(j), 0))}</strong></div>
-                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Sisa tagihan</span><strong className={historyJobs.reduce((s, j) => s + remainingOf(j), 0) > 0 ? "text-red-400" : ""}>{fmtRp(historyJobs.reduce((s, j) => s + remainingOf(j), 0))}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Sisa tagihan</span><strong className={historyJobs.reduce((s, j) => s + remainingOf(j), 0) > 0 ? "text-orange-400" : ""}>{fmtRp(historyJobs.reduce((s, j) => s + remainingOf(j), 0))}</strong></div>
                   <div className="flex justify-between gap-2"><span className="text-zinc-400">Terakhir pakai jasa</span><strong>{historyJobs.length ? [...historyJobs.map((j) => j.job_date)].sort().reverse()[0] : "—"}</strong></div>
                 </div>
                 <div className="space-y-2">
@@ -2156,7 +2184,7 @@ export default function Home() {
             </div>
             <div className="flex justify-between gap-3"><span className="text-zinc-400">Status</span>{statusPill(detailJob.status)}</div>
             {paidOf(detailJob) > 0 && <div className="flex justify-between gap-3"><span className="text-zinc-400">Sudah dibayar</span><strong>{fmtRp(paidOf(detailJob))}</strong></div>}
-            {remainingOf(detailJob) > 0 && <div className="flex justify-between gap-3"><span className="text-zinc-400">Sisa tagihan</span><strong className="text-red-400">{fmtRp(remainingOf(detailJob))}</strong></div>}
+            {remainingOf(detailJob) > 0 && <div className="flex justify-between gap-3"><span className="text-zinc-400">Sisa tagihan</span><strong className="text-orange-400">{fmtRp(remainingOf(detailJob))}</strong></div>}
             {detailJob.note && <div className="flex justify-between gap-3"><span className="text-zinc-400">Catatan</span><strong className="text-right">{detailJob.note}</strong></div>}
           </div>
           <div className="mt-5 space-y-2">
@@ -2246,7 +2274,6 @@ export default function Home() {
               {remaining > 0 && <p className="text-xs font-bold">Sisa tagihan: {fmtRp(remaining)}</p>}
               {job.note && <p className="text-xs mt-2">Catatan: {job.note}</p>}
               {settings.bank_name && settings.bank_account_number && <p className="text-xs font-bold mt-2">Pembayaran via transfer: {settings.bank_name} {settings.bank_account_number}{settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}</p>}
-              <p className="text-[11px] text-zinc-500 mt-3">Invoice ini dibuat dari aplikasi Pencatat Laporan.</p>
             </div>
           </div>
           <div className="mt-4 space-y-2">
@@ -2307,7 +2334,7 @@ export default function Home() {
                 {offerForm.rows.map((r, i) => (
                   <div key={i} className="border border-line rounded-xl p-3 space-y-2">
                     <div className="flex items-center gap-2">
-                      <input type="checkbox" className="w-4 h-4 accent-[#e60012] shrink-0" style={{ width: "auto" }} checked={r.checked} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, checked: e.target.checked } : x) })} aria-label="Sertakan layanan ini" />
+                      <input type="checkbox" className="w-4 h-4 accent-[#0284C7] shrink-0" style={{ width: "auto" }} checked={r.checked} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, checked: e.target.checked } : x) })} aria-label="Sertakan layanan ini" />
                       <input value={r.service_type} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, service_type: e.target.value } : x) })} placeholder="Nama layanan" className="flex-1 min-w-0" />
                       <button type="button" onClick={() => setOfferForm({ ...offerForm, rows: offerForm.rows.filter((_, j) => j !== i) })} aria-label="Hapus layanan" className="bg-zinc-800 w-8 h-8 rounded-lg font-bold shrink-0">×</button>
                     </div>
@@ -2423,7 +2450,6 @@ export default function Home() {
                 <p className="mt-8">(............................................)</p>
                 {form.signer && <p>{form.signer}</p>}
               </div>
-              <p className="text-[11px] text-zinc-500 mt-6">Surat penawaran ini dibuat dari aplikasi Pencatat Laporan.</p>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
@@ -2460,7 +2486,7 @@ export default function Home() {
         {dockBtn("dashboard", "Dashboard", icon(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>))}
         {dockBtn("customers", "Pelanggan", icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>))}
         <button onClick={handleAddNew} aria-label="Tambah catatan baru"
-          className="mx-1 -mt-8 w-14 h-14 rounded-full bg-persona hover:bg-persona-dark text-white flex items-center justify-center shadow-lg shadow-red-900/50 shrink-0">
+          className="mx-1 -mt-8 w-14 h-14 rounded-full bg-persona hover:bg-persona-dark text-white flex items-center justify-center shadow-lg shadow-sky-900/50 shrink-0">
           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         </button>
         {dockBtn("jobs", "Transaksi", icon(<><path d="M5 3h14v18H5z" /><path d="M8 7h8M8 11h8M8 15h5" /></>))}

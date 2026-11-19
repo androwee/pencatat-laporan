@@ -4,7 +4,7 @@ export const metadata = {
   title: "Pencatat Laporan",
   description: "Pencatat pelanggan jasa dan laporan pemasukan harian sampai bulanan.",
   manifest: "/manifest.json",
-  themeColor: "#e60012",
+  themeColor: "#0284C7",
   appleWebApp: { capable: true, title: "Pencatat Laporan", statusBarStyle: "black-translucent" },
   icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
 };
