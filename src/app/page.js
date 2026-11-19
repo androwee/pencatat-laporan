@@ -1808,15 +1808,23 @@ export default function Home() {
           <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
             <h2 className="font-bold">Laporan pemasukan</h2>
             <div className="flex flex-wrap gap-3 items-end">
-              <label className="block text-sm font-medium flex-1 min-w-[140px]">Jenis
+              <label className="block text-sm font-medium flex-1 min-w-[140px]">Periode
                 <select className="mt-1" value={reportPeriod} onChange={(e) => setReportPeriod(e.target.value)}>
                   <option value="daily">Harian</option><option value="monthly">Bulanan</option><option value="range">Rentang tanggal</option>
                 </select>
               </label>
-              <label className="block text-sm font-medium flex-1 min-w-[140px]">Tanggal<input className="mt-1" type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} /></label>
-              <label className="block text-sm font-medium flex-1 min-w-[140px]">Bulan<input className="mt-1" type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} /></label>
-              <label className="block text-sm font-medium flex-1 min-w-[140px]">Dari<input className="mt-1" type="date" value={reportFrom} onChange={(e) => setReportFrom(e.target.value)} /></label>
-              <label className="block text-sm font-medium flex-1 min-w-[140px]">Sampai<input className="mt-1" type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)} /></label>
+              {reportPeriod === "daily" && (
+                <label className="block text-sm font-medium flex-1 min-w-[140px]">Tanggal<input className="mt-1" type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} /></label>
+              )}
+              {reportPeriod === "monthly" && (
+                <label className="block text-sm font-medium flex-1 min-w-[140px]">Bulan<input className="mt-1" type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} /></label>
+              )}
+              {reportPeriod === "range" && (
+                <>
+                  <label className="block text-sm font-medium flex-1 min-w-[140px]">Dari<input className="mt-1" type="date" value={reportFrom} onChange={(e) => setReportFrom(e.target.value)} /></label>
+                  <label className="block text-sm font-medium flex-1 min-w-[140px]">Sampai<input className="mt-1" type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)} /></label>
+                </>
+              )}
             </div>
             <div className="flex gap-2 flex-wrap">
               <button onClick={loadReport} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Tampilkan laporan</button>
