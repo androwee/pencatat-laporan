@@ -119,6 +119,7 @@ export default function Home() {
   const [selectedJobs, setSelectedJobs] = useState([]);
   const [detailJob, setDetailJob] = useState(null);
   const [invoicePreview, setInvoicePreview] = useState(null);
+  const invoicePreviewRef = useRef(null);
   const [historyCustomer, setHistoryCustomer] = useState(null);
   const [historyJobs, setHistoryJobs] = useState(null);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
@@ -882,7 +883,9 @@ export default function Home() {
         let wmSize = 90;
         doc.setFontSize(wmSize);
         const wmWidth = doc.getTextWidth("LUNAS") || 1;
-        wmSize = Math.min(280, Math.max(60, wmSize * 330 / wmWidth));
+        // Target lebar 170mm (sekitar 140pt): teruji utuh di tengah halaman.
+        // Lebih besar dari itu hurufnya terpotong tepi halaman.
+        wmSize = Math.min(140, Math.max(60, wmSize * 170 / wmWidth));
         doc.setFontSize(wmSize);
         doc.text("LUNAS", 105, 148.5, { align: "center", angle: -54.7 });
         try { doc.setGState(new doc.GState({ opacity: 1 })); } catch { /* abaikan */ }
@@ -901,8 +904,9 @@ export default function Home() {
   const previewInvoice = async (job) => {
     try {
       const doc = await buildInvoiceDoc(job);
-      const url = doc.output("bloburl");
-      setInvoicePreview({ url, job });
+      const pdfData = doc.output("arraybuffer");
+      const url = URL.createObjectURL(new Blob([pdfData], { type: "application/pdf" }));
+      setInvoicePreview({ url, pdfData, job });
     } catch (err) { setError(`Gagal membuat preview invoice: ${err.message}`); }
   };
 
@@ -910,6 +914,44 @@ export default function Home() {
     if (invoicePreview?.url) { try { URL.revokeObjectURL(invoicePreview.url); } catch { /* abaikan */ } }
     setInvoicePreview(null);
   };
+
+  // Render PDF preview ke canvas di dalam aplikasi (PDF.js). Chrome Android
+  // tidak menampilkan PDF inline di <iframe> blob URL — hanya tombol "Buka" —
+  // jadi preview digambar langsung ke canvas supaya isinya terlihat.
+  useEffect(() => {
+    if (!invoicePreview) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist");
+        const loadingTask = pdfjs.getDocument({
+          data: invoicePreview.pdfData.slice(0),
+          disableWorker: true,
+          standardFontDataUrl: "/pdfjs-standard-fonts/",
+        });
+        const pdf = await loadingTask.promise;
+        if (cancelled) return;
+        const container = invoicePreviewRef.current;
+        if (!container) return;
+        container.innerHTML = "";
+        for (let p = 1; p <= pdf.numPages; p++) {
+          const page = await pdf.getPage(p);
+          const viewport = page.getViewport({ scale: 1.6 });
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.style.width = "100%";
+          canvas.style.height = "auto";
+          canvas.style.display = "block";
+          if (p > 1) canvas.style.marginTop = "8px";
+          container.appendChild(canvas);
+          await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+          if (cancelled) return;
+        }
+      } catch (err) { setError(`Gagal menampilkan preview invoice: ${err.message}`); }
+    })();
+    return () => { cancelled = true; };
+  }, [invoicePreview]);
 
   const markJobPaid = async (job, after) => {
     const remaining = remainingOf(job);
@@ -1866,10 +1908,9 @@ export default function Home() {
 
       {invoicePreview && (
         <Modal title="Preview Invoice" onClose={closeInvoicePreview}>
-          <div className="border border-line rounded-xl overflow-hidden bg-white">
-            <iframe src={invoicePreview.url} title="Preview Invoice" className="w-full h-[65vh] bg-white" />
-          </div>
+          <div ref={invoicePreviewRef} className="border border-line rounded-xl overflow-hidden bg-white min-h-[200px]" />
           <div className="mt-4 space-y-2">
+            <button onClick={() => window.open(invoicePreview.url, "_blank", "noopener")} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Buka di PDF viewer</button>
             <button onClick={() => downloadInvoice(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
             <button onClick={() => { const j = invoicePreview.job; closeInvoicePreview(); sendInvoiceWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">Kirim via WhatsApp</button>
             <button onClick={closeInvoicePreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tutup preview</button>
