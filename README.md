@@ -22,6 +22,15 @@ Webapp pribadi untuk mencatat pelanggan jasa dan laporan pemasukan harian sampai
 - PWA: manifest + service worker (shell bisa dibuka offline, API tidak pernah di-cache), menu Install aplikasi ada di Profil & Pengaturan saat browser menawarkan instalasi
 - Ekspor laporan ke CSV
 
+## Tampilan Aplikasi
+
+Tampilan aplikasi di HP (mode terang), November 2026:
+
+| | | |
+|---|---|---|
+| ![Dashboard](docs/screenshots/dashboard.jpg)<br>**Dashboard** — pemasukan bulan ini, piutang, tren | ![Pelanggan](docs/screenshots/pelanggan.jpg)<br>**Pelanggan** — daftar & cari pelanggan | ![Transaksi](docs/screenshots/transaksi.jpg)<br>**Transaksi** — filter periode & status |
+| ![Laporan](docs/screenshots/laporan.jpg)<br>**Laporan** — filter periode, total per status | ![Detail transaksi](docs/screenshots/detail-transaksi.jpg)<br>**Detail transaksi** — kirim WA, preview invoice | ![Preview Invoice](docs/screenshots/preview-invoice.jpg)<br>**Preview Invoice** — invoice siap kirim |
+
 ## Login: password lama + Google OAuth (multi-tenant)
 
 Ada dua cara masuk, dan data tiap usaha terpisah total (tabel `businesses`
