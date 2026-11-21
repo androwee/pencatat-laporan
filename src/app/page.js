@@ -1645,7 +1645,7 @@ export default function Home() {
             )}
           </div>
           <p className="text-xs text-zinc-400">Tahan lama pada pelanggan untuk memilih.</p>
-          <div className="bg-panel border border-line rounded-2xl overflow-hidden">
+          <div className="bg-panel border border-line rounded-2xl overflow-y-auto max-h-[60vh]">
             <div className="sm:hidden p-4 space-y-3">
               {customers.map((c) => (
                 <div key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
