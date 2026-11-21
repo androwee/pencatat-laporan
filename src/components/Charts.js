@@ -98,7 +98,7 @@ export function statusPill(status) {
   const meta = STATUS_META[status] || { label: status, color: "#a1a1aa" };
   const cls = status === "lunas" ? "bg-emerald-500/15 text-emerald-400"
     : status === "dp" ? "bg-amber-500/15 text-amber-400" : "bg-orange-500/15 text-orange-400";
-  return <span className={`inline-block px-3 py-0.5 rounded-full text-xs font-bold ${cls}`}>{meta.label}</span>;
+  return <span className={`inline-block self-start shrink-0 px-3 py-0.5 rounded-full text-xs font-bold ${cls}`}>{meta.label}</span>;
 }
 
 export function statusParts(totals) {
