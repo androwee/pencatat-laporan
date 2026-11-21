@@ -127,11 +127,12 @@ async function ensureMultiTenant(env) {
   // per pernyataan supaya tidak menggagalkan yang lain.
   await Promise.all([
     qRun(env, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, google_sub TEXT UNIQUE, email TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', picture TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)"),
-    qRun(env, "CREATE TABLE IF NOT EXISTS businesses (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_user_id INTEGER, legacy INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', logo TEXT NOT NULL DEFAULT '', bank_name TEXT NOT NULL DEFAULT '', bank_account_number TEXT NOT NULL DEFAULT '', bank_account_holder TEXT NOT NULL DEFAULT '', stamp_enabled INTEGER NOT NULL DEFAULT 1, stamp_color TEXT NOT NULL DEFAULT 'red', signer_name TEXT NOT NULL DEFAULT '', signature TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
+    qRun(env, "CREATE TABLE IF NOT EXISTS businesses (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_user_id INTEGER, legacy INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', logo TEXT NOT NULL DEFAULT '', bank_name TEXT NOT NULL DEFAULT '', bank_account_number TEXT NOT NULL DEFAULT '', bank_account_holder TEXT NOT NULL DEFAULT '', stamp_enabled INTEGER NOT NULL DEFAULT 1, stamp_color TEXT NOT NULL DEFAULT 'red', stamp_model TEXT NOT NULL DEFAULT '1', signer_name TEXT NOT NULL DEFAULT '', signature TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
     ...["customers", "jobs", "service_prices"].map((table) =>
       qRun(env, `ALTER TABLE ${table} ADD COLUMN business_id INTEGER NOT NULL DEFAULT 0`).catch(() => {})),
     qRun(env, "ALTER TABLE businesses ADD COLUMN stamp_enabled INTEGER NOT NULL DEFAULT 1").catch(() => {}),
     qRun(env, "ALTER TABLE businesses ADD COLUMN stamp_color TEXT NOT NULL DEFAULT 'red'").catch(() => {}),
+    qRun(env, "ALTER TABLE businesses ADD COLUMN stamp_model TEXT NOT NULL DEFAULT '1'").catch(() => {}),
     qRun(env, "ALTER TABLE businesses ADD COLUMN signer_name TEXT NOT NULL DEFAULT ''").catch(() => {}),
     qRun(env, "ALTER TABLE businesses ADD COLUMN signature TEXT NOT NULL DEFAULT ''").catch(() => {}),
     ...[["customers", "idx_customers_business"], ["jobs", "idx_jobs_business"], ["service_prices", "idx_prices_business"]].map(([table, index]) =>
@@ -201,13 +202,14 @@ function businessSettings(b) {
     bank_account_holder: b.bank_account_holder || "",
     stamp_enabled: b.stamp_enabled == null ? 1 : Number(b.stamp_enabled),
     stamp_color: ["red", "purple", "blue"].includes(b.stamp_color) ? b.stamp_color : "red",
+    stamp_model: ["1", "2", "3"].includes(String(b.stamp_model)) ? String(b.stamp_model) : "1",
     signer_name: b.signer_name || "",
     signature: b.signature || "",
   };
 }
 
-const BUSINESS_FIELDS = ["business_name", "business_address", "business_phone", "business_website", "business_logo", "bank_name", "bank_account_number", "bank_account_holder", "stamp_enabled", "stamp_color", "signer_name", "signature"];
-const BUSINESS_COLUMNS = { business_name: "name", business_address: "address", business_phone: "phone", business_website: "website", business_logo: "logo", bank_name: "bank_name", bank_account_number: "bank_account_number", bank_account_holder: "bank_account_holder", stamp_enabled: "stamp_enabled", stamp_color: "stamp_color", signer_name: "signer_name", signature: "signature" };
+const BUSINESS_FIELDS = ["business_name", "business_address", "business_phone", "business_website", "business_logo", "bank_name", "bank_account_number", "bank_account_holder", "stamp_enabled", "stamp_color", "stamp_model", "signer_name", "signature"];
+const BUSINESS_COLUMNS = { business_name: "name", business_address: "address", business_phone: "phone", business_website: "website", business_logo: "logo", bank_name: "bank_name", bank_account_number: "bank_account_number", bank_account_holder: "bank_account_holder", stamp_enabled: "stamp_enabled", stamp_color: "stamp_color", stamp_model: "stamp_model", signer_name: "signer_name", signature: "signature" };
 
 function validateBusinessProfile(body) {
   const out = {};
@@ -221,6 +223,11 @@ function validateBusinessProfile(body) {
     if (key === "stamp_color") {
       const raw = String(body[key] || "").trim().toLowerCase();
       out[key] = ["red", "purple", "blue"].includes(raw) ? raw : "red";
+      continue;
+    }
+    if (key === "stamp_model") {
+      const raw = String(body[key] || "").trim();
+      out[key] = ["1", "2", "3"].includes(raw) ? raw : "1";
       continue;
     }
     const value = String(body[key] || "").trim();

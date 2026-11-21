@@ -161,7 +161,7 @@ export default function Home() {
   const [duplicateWarning, setDuplicateWarning] = useState(null);
   const dupConfirmed = useRef(false);
   const [settings, setSettings] = useState({});
-  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "", stamp_enabled: 1, stamp_color: "red", signer_name: "", signature: "" });
+  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "", stamp_enabled: 1, stamp_color: "red", stamp_model: "1", signer_name: "", signature: "" });
   const [servicePrices, setServicePrices] = useState([]);
   const [priceForm, setPriceForm] = useState({ id: "", service_type: "", unit: "kubik", unit_price: "" });
   const [settingsSaved, setSettingsSaved] = useState("");
@@ -251,6 +251,7 @@ export default function Home() {
         business_logo: data.settings?.business_logo || "",
         stamp_enabled: data.settings?.stamp_enabled ?? 1,
         stamp_color: data.settings?.stamp_color || "red",
+        stamp_model: data.settings?.stamp_model || "1",
         signer_name: data.settings?.signer_name || "",
         signature: data.settings?.signature || "",
       });
@@ -301,6 +302,7 @@ export default function Home() {
       bank_account_holder: data.settings?.bank_account_holder || "",
       stamp_enabled: data.settings?.stamp_enabled ?? 1,
       stamp_color: data.settings?.stamp_color || "red",
+      stamp_model: data.settings?.stamp_model || "1",
       signer_name: data.settings?.signer_name || "",
       signature: data.settings?.signature || "",
     });
@@ -831,6 +833,7 @@ export default function Home() {
       bank_account_holder: settings.bank_account_holder || "",
       stamp_enabled: settings.stamp_enabled ?? 1,
       stamp_color: settings.stamp_color || "red",
+      stamp_model: settings.stamp_model || "1",
       signer_name: settings.signer_name || "",
       signature: settings.signature || "",
     });
@@ -1149,7 +1152,9 @@ export default function Home() {
   };
   // Warna stempel (dipilih di Pengaturan): merah, ungu (contoh andro), biru.
   const STAMP_COLORS = { red: [230, 0, 18], purple: [126, 34, 206], blue: [29, 78, 216] };
-  const drawStamp = (doc, cx, cy, topText, bottomText, middleText, colorKey = "red", tilt = 12) => {
+  const drawStamp = (doc, cx, cy, topText, bottomText, middleText, colorKey = "red", tilt = 12, model = "1") => {
+    // Model 3 = oval (tidak miring — template oval memang lurus).
+    if (model === "3") return drawStampOval(doc, cx, cy, topText, bottomText, middleText, colorKey);
     const color = STAMP_COLORS[colorKey] || STAMP_COLORS.red;
     // Putar titik berlawanan arah jarum jam di sekitar pusat stempel.
     const rotPt = (x, y) => {
@@ -1166,6 +1171,20 @@ export default function Home() {
     doc.setLineWidth(0.6);
     doc.circle(cx, cy, 16.5, "D");
     doc.circle(cx, cy, 12, "D");
+    // Model 2: garis vertikal di segmen atas dan bawah (di dalam lingkaran
+    // dalam r=12, di luar pita tengah), seperti varian 2 di template.
+    if (model === "2") {
+      doc.setLineWidth(0.8);
+      for (let dx = -11; dx <= 11; dx += 2) {
+        const half = Math.sqrt(12 * 12 - dx * dx);
+        const [tx1, ty1] = rotPt(cx + dx, cy - half);
+        const [tx2, ty2] = rotPt(cx + dx, cy - 4.5);
+        const [bx1, by1] = rotPt(cx + dx, cy + 4.5);
+        const [bx2, by2] = rotPt(cx + dx, cy + half);
+        doc.line(tx1, ty1, tx2, ty2);
+        doc.line(bx1, by1, bx2, by2);
+      }
+    }
     drawStampArcText(doc, topText, cx, cy, 14, 9.5, true, tilt);
     drawStampArcText(doc, bottomText, cx, cy, 14, 9.5, false, tilt);
     const [sx1, sy1] = rotPt(cx - 14, cy);
@@ -1182,6 +1201,61 @@ export default function Home() {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.text(middleText, cx, cy + 1.8, { angle: tilt, align: "center" });
+    try { doc.setGState(new doc.GState({ opacity: 1 })); } catch { /* abaikan */ }
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+  };
+  // Teks busur mengikuti elips: posisi (cx+rx·cos, cy+ry·sin), rotasi huruf
+  // mengikuti garis singgung elips (rumus atan2 — sama dengan lingkaran
+  // bila rx=ry).
+  const drawStampEllipseArcText = (doc, text, cx, cy, rx, ry, fontSize, top) => {
+    doc.setFont("helvetica", "bold");
+    const chars = [...text];
+    const n = chars.length;
+    if (!n) return;
+    const step = Math.min(8, 100 / n);
+    doc.setFontSize(step >= 7.5 ? fontSize : step >= 7 ? 8.5 : 8);
+    const total = step * n;
+    const centerAngle = top ? 270 : 90;
+    let angle = top ? centerAngle - total / 2 : centerAngle + total / 2;
+    chars.forEach((ch) => {
+      const mid = top ? angle + step / 2 : angle - step / 2;
+      const rad = mid * Math.PI / 180;
+      const cos = Math.cos(rad), sin = Math.sin(rad);
+      const x = cx + rx * cos;
+      const y = cy + ry * sin;
+      const rot = top
+        ? Math.atan2(-rx * cos, -ry * sin) * 180 / Math.PI
+        : Math.atan2(rx * cos, ry * sin) * 180 / Math.PI;
+      doc.text(ch, x, y, { angle: rot, align: "center" });
+      angle = top ? angle + step : angle - step;
+    });
+  };
+  // Model 3: stempel oval seperti varian 3 di template (tanpa gambar masjid).
+  // Elips tidak bisa dimiringkan lewat jsPDF, jadi oval digambar lurus.
+  const drawStampOval = (doc, cx, cy, topText, bottomText, middleText, colorKey = "red") => {
+    const color = STAMP_COLORS[colorKey] || STAMP_COLORS.red;
+    try { doc.setGState(new doc.GState({ opacity: 0.85 })); } catch { /* abaikan */ }
+    doc.setDrawColor(...color);
+    doc.setTextColor(...color);
+    doc.setFillColor(...color);
+    doc.setLineWidth(1.2);
+    doc.ellipse(cx, cy, 24, 15, "D");
+    doc.setLineWidth(0.6);
+    doc.ellipse(cx, cy, 22.5, 13.5, "D");
+    doc.ellipse(cx, cy, 16, 9, "D");
+    drawStampEllipseArcText(doc, topText, cx, cy, 19.5, 11.75, 9.5, true);
+    drawStampEllipseArcText(doc, bottomText, cx, cy, 19.5, 11.75, 9.5, false);
+    drawStampStar(doc, cx - 19.5, cy, 2.2, 0.9, 0);
+    drawStampStar(doc, cx + 19.5, cy, 2.2, 0.9, 0);
+    // Pita tengah: garis mendatar di cy±4.5 sepanjang tali busur elips dalam.
+    const halfChord = 16 * Math.sqrt(1 - (4.5 / 9) * (4.5 / 9));
+    doc.setLineWidth(0.8);
+    doc.line(cx - halfChord, cy - 4.5, cx + halfChord, cy - 4.5);
+    doc.line(cx - halfChord, cy + 4.5, cx + halfChord, cy + 4.5);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(middleText, cx, cy + 1.8, { align: "center" });
     try { doc.setGState(new doc.GState({ opacity: 1 })); } catch { /* abaikan */ }
     doc.setTextColor(0, 0, 0);
     doc.setDrawColor(0, 0, 0);
@@ -1262,7 +1336,7 @@ export default function Home() {
     // stempel tangan pada surat resmi.
     const stampCy = sigTop + 34;
     if (settings.stamp_enabled !== 0) {
-      drawStamp(doc, 158, stampCy, (settings.business_name || "Pencatat Laporan").toUpperCase(), stampCity(), remaining === 0 ? "LUNAS" : "DP", settings.stamp_color || "red", 12);
+      drawStamp(doc, 158, stampCy, (settings.business_name || "Pencatat Laporan").toUpperCase(), stampCity(), remaining === 0 ? "LUNAS" : "DP", settings.stamp_color || "red", 12, settings.stamp_model || "1");
     }
     // Tanda tangan yang diunggah (PNG transparan) digambar menimpa stempel,
     // seperti menandatangani di atas stempel pada surat resmi — dibuat lebar
@@ -2468,6 +2542,18 @@ export default function Home() {
                     </button>
                   ))}
                 </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium mb-2">Model stempel</p>
+                <div className="flex gap-2">
+                  {[["1", "Bundar"], ["2", "Bergaris"], ["3", "Oval"]].map(([key, label]) => (
+                    <button key={key} type="button" onClick={() => setSettingsForm({ ...settingsForm, stamp_model: key })}
+                      className={`px-4 py-2.5 rounded-xl font-bold text-sm border ${settingsForm.stamp_model === key ? "border-accent bg-accent-soft text-accent" : "border-line bg-panel"}`}>
+                      {key} · {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-zinc-400 mt-1">Model 1 bundar biasa, model 2 bundar dengan garis vertikal di atas-bawah, model 3 oval.</p>
               </div>
               <label className="block text-sm font-medium">Nama penandatangan (opsional)
                 <input className="mt-1" value={settingsForm.signer_name} onChange={(e) => setSettingsForm({ ...settingsForm, signer_name: e.target.value })} placeholder="cth: Andri Susilo" />
