@@ -1141,7 +1141,6 @@ export default function Home() {
     const businessName = settings.business_name || "Pencatat Laporan";
     const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
     const paid = Number(job.paid_amount || 0);
-    const remaining = Math.max(0, Number(job.amount) - paid);
     const receiptNo = receiptNoOf(job);
     const custPhone = customer.phone || job.customer_phone || "";
     const custText = `${job.customer_name || customer.name || ""}${custPhone ? ` (${custPhone})` : ""}`;
@@ -1229,12 +1228,6 @@ export default function Home() {
     valueStripes(valueX - 2, valueX + amtW + 4, y - 5, y + 3);
     doc.text(amountStr, valueX, y);
     y += 10;
-    if (remaining > 0) {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`Pembayaran sebagian (DP) dari total ${fmtRp(job.amount)}; sisa ${fmtRp(remaining)}.`, 14, y);
-      y += 8;
-    }
     // Blok tanda tangan dirapatkan ke baris tanggal (seperti kwitansi lama).
     y += 6;
     // Bila halaman sudah terlalu penuh, pindah blok tanda tangan ke halaman baru.
@@ -2778,7 +2771,6 @@ export default function Home() {
       {receiptPreview && (() => {
         const job = receiptPreview.job;
         const paid = Number(job.paid_amount || 0);
-        const remaining = Math.max(0, Number(job.amount) - paid);
         const receiptNo = receiptNoOf(job);
         const custText = `${job.customer_name || ""}${job.customer_phone ? ` (${job.customer_phone})` : ""}`;
         const serviceText = (job.items?.length ? job.items.map((it) => it.service_type) : [job.service_type]).filter(Boolean).join(", ");
@@ -2824,7 +2816,6 @@ export default function Home() {
                   <span className="font-bold text-lg px-1" style={{ backgroundImage: stripeBg }}>{amountStr}</span>
                 </div>
               </div>
-              {remaining > 0 && <p className="text-xs mt-2">Pembayaran sebagian (DP) dari total {fmtRp(job.amount)}; sisa {fmtRp(remaining)}.</p>}
               <div className="mt-4 ml-auto w-[240px]">
                 <p className="ml-[20%] w-[80%] text-center">{formatDateId(job.job_date)}</p>
                 <p className="ml-[20%] w-[80%] text-center">Hormat kami,</p>
