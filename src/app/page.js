@@ -161,7 +161,7 @@ export default function Home() {
   const [duplicateWarning, setDuplicateWarning] = useState(null);
   const dupConfirmed = useRef(false);
   const [settings, setSettings] = useState({});
-  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "", stamp_enabled: 1 });
+  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "", stamp_enabled: 1, stamp_color: "red", signer_name: "", signature: "" });
   const [servicePrices, setServicePrices] = useState([]);
   const [priceForm, setPriceForm] = useState({ id: "", service_type: "", unit: "kubik", unit_price: "" });
   const [settingsSaved, setSettingsSaved] = useState("");
@@ -250,6 +250,9 @@ export default function Home() {
         business_website: data.settings?.business_website || "",
         business_logo: data.settings?.business_logo || "",
         stamp_enabled: data.settings?.stamp_enabled ?? 1,
+        stamp_color: data.settings?.stamp_color || "red",
+        signer_name: data.settings?.signer_name || "",
+        signature: data.settings?.signature || "",
       });
     } catch (e) { /* settings opsional, abaikan */ }
   }, []);
@@ -297,6 +300,9 @@ export default function Home() {
       bank_account_number: data.settings?.bank_account_number || "",
       bank_account_holder: data.settings?.bank_account_holder || "",
       stamp_enabled: data.settings?.stamp_enabled ?? 1,
+      stamp_color: data.settings?.stamp_color || "red",
+      signer_name: data.settings?.signer_name || "",
+      signature: data.settings?.signature || "",
     });
     setServicePrices(data.prices || []);
     const trend = groupByDate(allJobs);
@@ -824,6 +830,9 @@ export default function Home() {
       bank_account_number: settings.bank_account_number || "",
       bank_account_holder: settings.bank_account_holder || "",
       stamp_enabled: settings.stamp_enabled ?? 1,
+      stamp_color: settings.stamp_color || "red",
+      signer_name: settings.signer_name || "",
+      signature: settings.signature || "",
     });
     setSettingsSaved("");
     loadServicePrices();
@@ -865,6 +874,34 @@ export default function Home() {
       URL.revokeObjectURL(url);
     };
     img.onerror = () => { setError("Gambar logo tidak bisa dibaca."); URL.revokeObjectURL(url); };
+    img.src = url;
+  };
+
+  // Tanda tangan: selalu PNG supaya latar transparan terjaga (jangan
+  // diubah ke JPEG seperti logo — JPEG tidak punya transparansi dan
+  // latar putihnya akan menutupi stempel di kwitansi).
+  const handleSignatureFile = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setError("File tanda tangan harus berupa gambar."); return; }
+    if (file.size > 5 * 1024 * 1024) { setError("Ukuran file tanda tangan maksimal 5 MB."); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxDim = 512;
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        setSettingsForm((prev) => ({ ...prev, signature: canvas.toDataURL("image/png") }));
+        setSettingsSaved("");
+      } catch { setError("Tanda tangan tidak bisa diproses."); }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setError("Gambar tanda tangan tidak bisa dibaca."); URL.revokeObjectURL(url); };
     img.src = url;
   };
 
@@ -1065,11 +1102,13 @@ export default function Home() {
   // Digambar langsung dengan jsPDF (lingkaran + teks melingkar + bintang),
   // mengikuti contoh stempel bundar: nama usaha di busur atas, kota di
   // busur bawah, kata tengah LUNAS (atau DP bila pembayaran sebagian).
-  const STAMP_RED = [230, 0, 18];
-  const drawStampStar = (doc, cx, cy, rOuter, rInner) => {
+  // Warna stempel & nama penandatangan: lihat STAMP_COLORS di bawah.
+  // Bintang: titik sudut diputar -tilt supaya seluruh stempel miring
+  // berlawanan arah jarum jam seperti stempel tangan asli.
+  const drawStampStar = (doc, cx, cy, rOuter, rInner, tilt = 0) => {
     const pts = [];
     for (let i = 0; i < 10; i++) {
-      const ang = (-90 + i * 36) * Math.PI / 180;
+      const ang = (-90 + i * 36 - tilt) * Math.PI / 180;
       const r = i % 2 === 0 ? rOuter : rInner;
       pts.push([cx + r * Math.cos(ang), cy + r * Math.sin(ang)]);
     }
@@ -1080,54 +1119,78 @@ export default function Home() {
     }
     doc.lines(lines, pts[0][0], pts[0][1], [1, 1], "F", true);
   };
-  const drawStampArcText = (doc, text, cx, cy, r, fontSize, top) => {
+  // Teks busur: huruf dibagi RATA per sudut (bukan per lebar huruf) supaya
+  // teks selalu mengisi busur dengan pas, berapa pun panjang namanya.
+  const drawStampArcText = (doc, text, cx, cy, r, fontSize, top, tilt = 0) => {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(fontSize);
     const chars = [...text];
-    const widths = chars.map((ch) => doc.getTextWidth(ch) || fontSize * 0.6);
-    const totalAngle = widths.reduce((s, w) => s + (w / r) * 180 / Math.PI, 0);
-    const centerAngle = top ? 270 : 90;
-    let angle = top ? centerAngle - totalAngle / 2 : centerAngle + totalAngle / 2;
-    chars.forEach((ch, i) => {
-      const w = widths[i];
-      const charAngle = (w / r) * 180 / Math.PI;
-      const mid = top ? angle + charAngle / 2 : angle - charAngle / 2;
-      const rad = mid * Math.PI / 180;
+    const n = chars.length;
+    if (!n) return;
+    // Bentang busur dibatasi 110° supaya huruf tetap di bagian atas/bawah
+    // (tidak menjalar ke sisi stempel); font mengecil bila nama panjang.
+    const step = Math.min(8, 110 / n);
+    doc.setFontSize(step >= 7.5 ? fontSize : step >= 7 ? 8.5 : 8);
+    const total = step * n;
+    // Pusat busur digeser +tilt supaya setelah dimiringkan teks tetap
+    // terpusat di atas/bawah (bukan menjalar ke sisi stempel).
+    const centerAngle = (top ? 270 : 90) + tilt;
+    let angle = top ? centerAngle - total / 2 : centerAngle + total / 2;
+    chars.forEach((ch) => {
+      const mid = top ? angle + step / 2 : angle - step / 2;
+      const posAngle = mid - tilt; // posisi ikut miring berlawanan arah jarum jam
+      const rad = posAngle * Math.PI / 180;
       const x = cx + r * Math.cos(rad);
       const y = cy + r * Math.sin(rad);
-      const rot = top ? 270 - mid : 90 - mid;
+      const rot = top ? 270 - mid + tilt : 90 - mid + tilt;
       doc.text(ch, x, y, { angle: rot, align: "center" });
-      angle = top ? angle + charAngle : angle - charAngle;
+      angle = top ? angle + step : angle - step;
     });
   };
-  const drawStamp = (doc, cx, cy, topText, bottomText, middleText) => {
+  // Warna stempel (dipilih di Pengaturan): merah, ungu (contoh andro), biru.
+  const STAMP_COLORS = { red: [230, 0, 18], purple: [126, 34, 206], blue: [29, 78, 216] };
+  const drawStamp = (doc, cx, cy, topText, bottomText, middleText, colorKey = "red", tilt = 12) => {
+    const color = STAMP_COLORS[colorKey] || STAMP_COLORS.red;
+    // Putar titik berlawanan arah jarum jam di sekitar pusat stempel.
+    const rotPt = (x, y) => {
+      const t = tilt * Math.PI / 180;
+      const dx = x - cx, dy = y - cy;
+      return [cx + dx * Math.cos(t) + dy * Math.sin(t), cy - dx * Math.sin(t) + dy * Math.cos(t)];
+    };
     try { doc.setGState(new doc.GState({ opacity: 0.85 })); } catch { /* abaikan */ }
-    doc.setDrawColor(...STAMP_RED);
-    doc.setTextColor(...STAMP_RED);
-    doc.setFillColor(...STAMP_RED);
+    doc.setDrawColor(...color);
+    doc.setTextColor(...color);
+    doc.setFillColor(...color);
     doc.setLineWidth(1.2);
     doc.circle(cx, cy, 18, "D");
     doc.setLineWidth(0.6);
     doc.circle(cx, cy, 16.5, "D");
     doc.circle(cx, cy, 12, "D");
-    drawStampArcText(doc, topText, cx, cy, 14.5, 8.5, true);
-    drawStampArcText(doc, bottomText, cx, cy, 14.5, 8.5, false);
-    drawStampStar(doc, cx - 14.5, cy, 2.2, 0.9);
-    drawStampStar(doc, cx + 14.5, cy, 2.2, 0.9);
+    drawStampArcText(doc, topText, cx, cy, 14.5, 9.5, true, tilt);
+    drawStampArcText(doc, bottomText, cx, cy, 14.5, 9.5, false, tilt);
+    const [sx1, sy1] = rotPt(cx - 14.5, cy);
+    const [sx2, sy2] = rotPt(cx + 14.5, cy);
+    drawStampStar(doc, sx1, sy1, 2.2, 0.9, tilt);
+    drawStampStar(doc, sx2, sy2, 2.2, 0.9, tilt);
+    const [bx1, by1] = rotPt(cx - 11.1, cy - 4.5);
+    const [bx2, by2] = rotPt(cx + 11.1, cy - 4.5);
+    const [bx3, by3] = rotPt(cx - 11.1, cy + 4.5);
+    const [bx4, by4] = rotPt(cx + 11.1, cy + 4.5);
     doc.setLineWidth(0.8);
-    doc.line(cx - 11.1, cy - 4.5, cx + 11.1, cy - 4.5);
-    doc.line(cx - 11.1, cy + 4.5, cx + 11.1, cy + 4.5);
+    doc.line(bx1, by1, bx2, by2);
+    doc.line(bx3, by3, bx4, by4);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text(middleText, cx, cy + 1.8, { align: "center" });
+    doc.text(middleText, cx, cy + 1.8, { angle: tilt, align: "center" });
     try { doc.setGState(new doc.GState({ opacity: 1 })); } catch { /* abaikan */ }
     doc.setTextColor(0, 0, 0);
     doc.setDrawColor(0, 0, 0);
   };
   const stampCity = () => {
     const last = cityFromAddress(settings.business_address || "");
-    const cleaned = String(last || "").replace(/[^a-zA-Z\s]/g, "").trim().split(/\s+/)[0] || "";
-    return (cleaned || "INDONESIA").toUpperCase();
+    // Buang kode pos & tanda baca, ambil kata TERAKHIR dari segmen alamat
+    // terakhir ("Kedamean - Gresik" -> Gresik, "Sidoarjo 61224" -> Sidoarjo).
+    const words = String(last || "").replace(/[^a-zA-Z\s]/g, " ").trim().split(/\s+/).filter(Boolean);
+    return ((words[words.length - 1] || "") || "INDONESIA").toUpperCase();
   };
 
   const buildReceiptDoc = async (job) => {
@@ -1187,15 +1250,32 @@ export default function Home() {
       doc.setFont("helvetica", "normal");
     }
     y += 8;
+    // Bila halaman sudah terlalu penuh, pindah blok tanda tangan ke halaman baru.
+    if (y > 215) { doc.addPage(); y = 20; }
     const sigTop = y;
     const place = cityFromAddress(settings.business_address);
     doc.text(`${place ? `${place}, ` : ""}${formatDateId(job.job_date)}`, 196, y, { align: "right" }); y += 8;
     doc.text("Hormat kami,", 196, y, { align: "right" }); y += 6;
-    doc.text(businessName, 196, y, { align: "right" }); y += 20;
+    // Nama penandatangan (opsi di Pengaturan) bila diisi, kalau tidak nama usaha.
+    doc.text(settings.signer_name || businessName, 196, y, { align: "right" }); y += 40;
     doc.text("( ___________________ )", 196, y, { align: "right" });
-    // Stempel otomatis di atas blok tanda tangan (bisa dimatikan di Pengaturan).
+    // Stempel otomatis di ruang kosong antara nama dan garis tanda tangan
+    // (bisa dimatikan / diganti warnanya di Pengaturan), sedikit miring
+    // seperti stempel tangan pada surat resmi.
+    const stampCy = sigTop + 34;
     if (settings.stamp_enabled !== 0) {
-      drawStamp(doc, 158, sigTop + 14, (settings.business_name || "Pencatat Laporan").toUpperCase(), stampCity(), remaining === 0 ? "LUNAS" : "DP");
+      drawStamp(doc, 158, stampCy, (settings.business_name || "Pencatat Laporan").toUpperCase(), stampCity(), remaining === 0 ? "LUNAS" : "DP", settings.stamp_color || "red", 12);
+    }
+    // Tanda tangan yang diunggah (PNG transparan) digambar menimpa stempel,
+    // seperti menandatangani di atas stempel pada surat resmi.
+    if (settings.signature) {
+      try {
+        const props = doc.getImageProperties(settings.signature);
+        const sigW = 38;
+        let sigH = sigW * (props.height / props.width);
+        if (sigH > 16) sigH = 16;
+        doc.addImage(settings.signature, "PNG", 158 - sigW / 2, stampCy - sigH / 2, sigW, sigH);
+      } catch { /* abaikan bila gambar rusak */ }
     }
     return doc;
   };
@@ -2361,9 +2441,43 @@ export default function Home() {
                 <input type="checkbox" className="w-5 h-5 accent-[var(--accent)] shrink-0 mt-0.5" checked={settingsForm.stamp_enabled === 1} onChange={(e) => setSettingsForm({ ...settingsForm, stamp_enabled: e.target.checked ? 1 : 0 })} />
                 <span>
                   <span className="block font-bold text-sm">Stempel LUNAS di kwitansi</span>
-                  <span className="block text-xs text-zinc-400 mt-0.5">Tampilkan stempel bundar (nama usaha + LUNAS) di atas tanda tangan pada kwitansi PDF. Matikan bila tidak mau ada stempel.</span>
+                  <span className="block text-xs text-zinc-400 mt-0.5">Tampilkan stempel bundar (nama usaha + LUNAS) di area tanda tangan pada kwitansi PDF. Matikan bila tidak mau ada stempel.</span>
                 </span>
               </label>
+              <div>
+                <p className="text-sm font-medium mb-2">Warna stempel</p>
+                <div className="flex gap-3">
+                  {[["red", "Merah", "#e60012"], ["purple", "Ungu", "#7e22ce"], ["blue", "Biru", "#1d4ed8"]].map(([key, label, hex]) => (
+                    <button key={key} type="button" onClick={() => setSettingsForm({ ...settingsForm, stamp_color: key })} aria-label={label} title={label}
+                      className={`w-9 h-9 rounded-full shrink-0 border border-white/25 flex items-center justify-center ${settingsForm.stamp_color === key ? "ring-2 ring-zinc-400 scale-110" : ""}`}
+                      style={{ background: hex }}>
+                      {settingsForm.stamp_color === key && (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12.5l5 5L20 6.5" /></svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="block text-sm font-medium">Nama penandatangan (opsional)
+                <input className="mt-1" value={settingsForm.signer_name} onChange={(e) => setSettingsForm({ ...settingsForm, signer_name: e.target.value })} placeholder="cth: Andri Susilo" />
+              </label>
+              <p className="text-xs text-zinc-400 -mt-1">Nama yang tampil di bawah "Hormat kami," pada kwitansi. Kosongkan untuk memakai nama usaha.</p>
+              <div>
+                <p className="text-sm font-medium mb-2">Tanda tangan <span className="text-zinc-400 font-normal">— digambar menimpa stempel di kwitansi</span></p>
+                {settingsForm.signature && (
+                  <img src={settingsForm.signature} alt="Pratinjau tanda tangan" className="max-h-20 max-w-full object-contain bg-white rounded-lg p-2 mb-2 border border-line" />
+                )}
+                <div className="flex gap-2 flex-wrap items-center">
+                  <label className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm cursor-pointer">
+                    {settingsForm.signature ? "Ganti tanda tangan" : "Pilih tanda tangan"}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { handleSignatureFile(e.target.files?.[0]); e.target.value = ""; }} />
+                  </label>
+                  {settingsForm.signature && (
+                    <button type="button" onClick={() => setSettingsForm({ ...settingsForm, signature: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Hapus tanda tangan</button>
+                  )}
+                </div>
+                <p className="text-xs text-zinc-400 mt-1">Pakai gambar PNG dengan latar transparan supaya stempel tetap terlihat di balik tanda tangan. Setelah pilih/ganti, ketuk "Simpan informasi usaha" di bawah.</p>
+              </div>
               <div className="flex items-center gap-3">
                 <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">Simpan informasi usaha</button>
                 {settingsSaved && <span className="text-sm text-emerald-400">{settingsSaved}</span>}

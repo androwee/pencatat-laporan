@@ -127,10 +127,13 @@ async function ensureMultiTenant(env) {
   // per pernyataan supaya tidak menggagalkan yang lain.
   await Promise.all([
     qRun(env, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, google_sub TEXT UNIQUE, email TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', picture TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)"),
-    qRun(env, "CREATE TABLE IF NOT EXISTS businesses (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_user_id INTEGER, legacy INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', logo TEXT NOT NULL DEFAULT '', bank_name TEXT NOT NULL DEFAULT '', bank_account_number TEXT NOT NULL DEFAULT '', bank_account_holder TEXT NOT NULL DEFAULT '', stamp_enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
+    qRun(env, "CREATE TABLE IF NOT EXISTS businesses (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_user_id INTEGER, legacy INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', logo TEXT NOT NULL DEFAULT '', bank_name TEXT NOT NULL DEFAULT '', bank_account_number TEXT NOT NULL DEFAULT '', bank_account_holder TEXT NOT NULL DEFAULT '', stamp_enabled INTEGER NOT NULL DEFAULT 1, stamp_color TEXT NOT NULL DEFAULT 'red', signer_name TEXT NOT NULL DEFAULT '', signature TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
     ...["customers", "jobs", "service_prices"].map((table) =>
       qRun(env, `ALTER TABLE ${table} ADD COLUMN business_id INTEGER NOT NULL DEFAULT 0`).catch(() => {})),
     qRun(env, "ALTER TABLE businesses ADD COLUMN stamp_enabled INTEGER NOT NULL DEFAULT 1").catch(() => {}),
+    qRun(env, "ALTER TABLE businesses ADD COLUMN stamp_color TEXT NOT NULL DEFAULT 'red'").catch(() => {}),
+    qRun(env, "ALTER TABLE businesses ADD COLUMN signer_name TEXT NOT NULL DEFAULT ''").catch(() => {}),
+    qRun(env, "ALTER TABLE businesses ADD COLUMN signature TEXT NOT NULL DEFAULT ''").catch(() => {}),
     ...[["customers", "idx_customers_business"], ["jobs", "idx_jobs_business"], ["service_prices", "idx_prices_business"]].map(([table, index]) =>
       qRun(env, `CREATE INDEX IF NOT EXISTS ${index} ON ${table}(business_id)`)),
   ]);
@@ -197,11 +200,14 @@ function businessSettings(b) {
     bank_account_number: b.bank_account_number || "",
     bank_account_holder: b.bank_account_holder || "",
     stamp_enabled: b.stamp_enabled == null ? 1 : Number(b.stamp_enabled),
+    stamp_color: ["red", "purple", "blue"].includes(b.stamp_color) ? b.stamp_color : "red",
+    signer_name: b.signer_name || "",
+    signature: b.signature || "",
   };
 }
 
-const BUSINESS_FIELDS = ["business_name", "business_address", "business_phone", "business_website", "business_logo", "bank_name", "bank_account_number", "bank_account_holder", "stamp_enabled"];
-const BUSINESS_COLUMNS = { business_name: "name", business_address: "address", business_phone: "phone", business_website: "website", business_logo: "logo", bank_name: "bank_name", bank_account_number: "bank_account_number", bank_account_holder: "bank_account_holder", stamp_enabled: "stamp_enabled" };
+const BUSINESS_FIELDS = ["business_name", "business_address", "business_phone", "business_website", "business_logo", "bank_name", "bank_account_number", "bank_account_holder", "stamp_enabled", "stamp_color", "signer_name", "signature"];
+const BUSINESS_COLUMNS = { business_name: "name", business_address: "address", business_phone: "phone", business_website: "website", business_logo: "logo", bank_name: "bank_name", bank_account_number: "bank_account_number", bank_account_holder: "bank_account_holder", stamp_enabled: "stamp_enabled", stamp_color: "stamp_color", signer_name: "signer_name", signature: "signature" };
 
 function validateBusinessProfile(body) {
   const out = {};
@@ -212,10 +218,15 @@ function validateBusinessProfile(body) {
       out[key] = (raw === 1 || raw === "1" || raw === true || raw === "true") ? 1 : 0;
       continue;
     }
+    if (key === "stamp_color") {
+      const raw = String(body[key] || "").trim().toLowerCase();
+      out[key] = ["red", "purple", "blue"].includes(raw) ? raw : "red";
+      continue;
+    }
     const value = String(body[key] || "").trim();
-    if (key === "business_logo") {
-      if (value && !/^data:image\/(png|jpeg);base64,/.test(value)) return { error: "Logo harus berupa gambar PNG atau JPEG." };
-      if (value.length > 1500000) return { error: "Logo terlalu besar (maksimal sekitar 1 MB setelah diperkecil)." };
+    if (key === "business_logo" || key === "signature") {
+      if (value && !/^data:image\/(png|jpeg);base64,/.test(value)) return { error: key === "business_logo" ? "Logo harus berupa gambar PNG atau JPEG." : "Tanda tangan harus berupa gambar PNG atau JPEG." };
+      if (value.length > 1500000) return { error: key === "business_logo" ? "Logo terlalu besar (maksimal sekitar 1 MB setelah diperkecil)." : "Tanda tangan terlalu besar (maksimal sekitar 1 MB setelah diperkecil)." };
     } else if (value.length > 200) {
       return { error: `Isi ${key} maksimal 200 karakter.` };
     }
