@@ -299,6 +299,7 @@ export default function Home() {
     setDash({
       today: Number(data.totals?.daily?.total || 0),
       month: Number(data.totals?.monthly?.total || 0),
+      lastMonth: Number(data.totals?.lastMonth?.total || 0),
       customers: cust.length, jobs: allJobs.length,
       outstanding: outstandingJobs.reduce((s, j) => s + Math.max(0, Number(j.amount) - Number(j.paid_amount || 0)), 0),
       outstandingCount: outstandingJobs.length,
@@ -1031,6 +1032,131 @@ export default function Home() {
     } catch (err) { setError(`Gagal membuat invoice: ${err.message}`); }
   };
 
+  // ---------- Kwitansi ----------
+  // Nomor kwitansi mengikuti pola nomor invoice (tanggal + id transaksi),
+  // jadi unik dan stabil per transaksi: KWT-20261120-0001.
+  const receiptNoOf = (job) => `KWT-${String(job.job_date).replaceAll("-", "")}-${String(job.id).padStart(4, "0")}`;
+
+  // Terbilang: angka menjadi kata Bahasa Indonesia (untuk kwitansi).
+  // Contoh: 1250000 -> "satu juta dua ratus lima puluh ribu".
+  const TERBILANG_UNITS = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+  const terbilang = (n) => {
+    n = Math.floor(Math.abs(Number(n) || 0));
+    if (n === 0) return "nol";
+    if (n < 12) return TERBILANG_UNITS[n];
+    if (n < 20) return `${TERBILANG_UNITS[n - 10]} belas`;
+    if (n < 100) return `${TERBILANG_UNITS[Math.floor(n / 10)]} puluh${n % 10 ? ` ${terbilang(n % 10)}` : ""}`;
+    if (n < 200) return `seratus${n % 100 ? ` ${terbilang(n % 100)}` : ""}`;
+    if (n < 1000) return `${TERBILANG_UNITS[Math.floor(n / 100)]} ratus${n % 100 ? ` ${terbilang(n % 100)}` : ""}`;
+    if (n < 2000) return `seribu${n % 1000 ? ` ${terbilang(n % 1000)}` : ""}`;
+    if (n < 1000000) return `${terbilang(Math.floor(n / 1000))} ribu${n % 1000 ? ` ${terbilang(n % 1000)}` : ""}`;
+    if (n < 1000000000) return `${terbilang(Math.floor(n / 1000000))} juta${n % 1000000 ? ` ${terbilang(n % 1000000)}` : ""}`;
+    if (n < 1000000000000) return `${terbilang(Math.floor(n / 1000000000))} miliar${n % 1000000000 ? ` ${terbilang(n % 1000000000)}` : ""}`;
+    return `${terbilang(Math.floor(n / 1000000000000))} triliun${n % 1000000000000 ? ` ${terbilang(n % 1000000000000)}` : ""}`;
+  };
+
+  const buildReceiptDoc = async (job) => {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF();
+    const businessName = settings.business_name || "Pencatat Laporan";
+    const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
+    const paid = Number(job.paid_amount || 0);
+    const remaining = Math.max(0, Number(job.amount) - paid);
+    const receiptNo = receiptNoOf(job);
+    let y = 18;
+    let textX = 14;
+    let logoBottom = 0;
+    if (settings.business_logo) {
+      try {
+        const props = doc.getImageProperties(settings.business_logo);
+        const format = settings.business_logo.includes("image/jpeg") ? "JPEG" : "PNG";
+        const aspect = props.width / props.height;
+        const logoW = aspect >= 1 ? 28 : Math.min(28, 20 * aspect);
+        const logoH = aspect >= 1 ? 28 / aspect : 20;
+        doc.addImage(settings.business_logo, format, 14, 12, logoW, logoH);
+        textX = 14 + logoW + 4;
+        logoBottom = 12 + logoH;
+      } catch { /* logo rusak: lanjut tanpa logo, jangan gagalkan kwitansi */ }
+    }
+    doc.setFontSize(18); doc.setFont("helvetica", "bold");
+    doc.splitTextToSize(businessName, 196 - textX).forEach((l) => { doc.text(l, textX, y); y += 8; });
+    doc.setFontSize(11); doc.setFont("helvetica", "normal");
+    const businessLines = [settings.business_address, settings.business_phone, settings.business_website].filter(Boolean);
+    businessLines.forEach((line) => { doc.splitTextToSize(String(line), 196 - textX).forEach((l) => { doc.text(l, textX, y); y += 6; }); });
+    y = Math.max(y, logoBottom) + 4;
+    doc.setDrawColor(230, 0, 18); doc.setLineWidth(0.8); doc.line(14, y, 196, y); y += 10;
+    doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.text("KWITANSI", 14, y); y += 8;
+    doc.setFontSize(11); doc.setFont("helvetica", "normal");
+    doc.text(`Nomor: ${receiptNo}`, 14, y); y += 6;
+    doc.text(`Tanggal: ${job.job_date}`, 14, y); y += 10;
+    doc.setFont("helvetica", "bold"); doc.text("Telah diterima dari:", 14, y); y += 7;
+    doc.setFont("helvetica", "normal");
+    const custLines = doc.splitTextToSize(`${job.customer_name || customer.name || ""}${customer.phone ? ` (${customer.phone})` : job.customer_phone ? ` (${job.customer_phone})` : ""}`, 182);
+    custLines.forEach((line) => { doc.text(line, 14, y); y += 6; });
+    y += 4;
+    doc.setFont("helvetica", "bold"); doc.text("Uang sejumlah:", 14, y); y += 7;
+    doc.setFont("helvetica", "normal");
+    doc.splitTextToSize(`${terbilang(paid)} rupiah`, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
+    y += 2;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+    doc.text(fmtRp(paid), 14, y); y += 12;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+    doc.setFont("helvetica", "bold"); doc.text("Untuk pembayaran:", 14, y); y += 7;
+    doc.setFont("helvetica", "normal");
+    const serviceText = (job.items?.length ? job.items.map((it) => it.service_type) : [job.service_type]).filter(Boolean).join(", ");
+    doc.splitTextToSize(serviceText, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
+    if (remaining > 0) {
+      y += 2;
+      doc.setFont("helvetica", "bold");
+      doc.text(`Pembayaran sebagian (DP) dari total ${fmtRp(job.amount)}; sisa ${fmtRp(remaining)}.`, 14, y); y += 6;
+      doc.setFont("helvetica", "normal");
+    }
+    y += 8;
+    const place = cityFromAddress(settings.business_address);
+    doc.text(`${place ? `${place}, ` : ""}${formatDateId(job.job_date)}`, 196, y, { align: "right" }); y += 8;
+    doc.text("Hormat kami,", 196, y, { align: "right" }); y += 6;
+    doc.text(businessName, 196, y, { align: "right" }); y += 20;
+    doc.text("( ___________________ )", 196, y, { align: "right" });
+    return doc;
+  };
+
+  const downloadReceipt = async (job) => {
+    try {
+      const doc = await buildReceiptDoc(job);
+      doc.save(`kwitansi-${job.id}-${job.job_date}.pdf`);
+    } catch (err) { setError(`Gagal membuat kwitansi: ${err.message}`); }
+  };
+
+  const sendReceiptWhatsApp = async (job) => {
+    const businessName = settings.business_name || "Pencatat Laporan";
+    const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
+    const phone = toWaNumber(customer.phone || job.customer_phone);
+    const paid = Number(job.paid_amount || 0);
+    const receiptNo = receiptNoOf(job);
+    const serviceText = (job.items?.length ? job.items.map((it) => it.service_type) : [job.service_type]).filter(Boolean).join(", ");
+    const msg = `${businessName}\nKWITANSI ${receiptNo}\nTanggal: ${job.job_date}\nDiterima dari: ${job.customer_name}\n\nUang sejumlah: ${terbilang(paid)} rupiah (${fmtRp(paid)})\nUntuk pembayaran: ${serviceText}\n\nTerima kasih.`;
+    const filename = `kwitansi-${job.id}-${job.job_date}.pdf`;
+    // 1. Utamakan kirim file PDF langsung lewat lembar berbagi perangkat
+    // (Web Share API, didukung Chrome Android). Di lembar berbagi, pilih
+    // WhatsApp lalu pilih kontak pelanggan.
+    try {
+      const doc = await buildReceiptDoc(job);
+      const file = new File([doc.output("blob")], filename, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Kwitansi ${receiptNo}`, text: `${businessName} — Kwitansi ${receiptNo}, ${fmtRp(paid)}.` });
+        return;
+      }
+    } catch (err) {
+      if (err?.name === "AbortError") return; // pengguna membatalkan lembar berbagi
+    }
+    // 2. Fallback: chat wa.me langsung ke nomor pelanggan, pesan teks kwitansi.
+    if (!/^62\d{8,13}$/.test(phone)) {
+      setError("Berbagi file PDF tidak didukung browser ini, dan nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan, atau unduh PDF-nya lalu kirim manual dari WhatsApp.");
+      return;
+    }
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+  };
+
   // Preview invoice sebagai HTML (instan, tanpa unduh apa-apa): PDF.js
   // terlalu berat di koneksi lambat dan canvas-nya melebar di HP, jadi
   // isi invoice ditampilkan langsung dari data yang sudah dimuat.
@@ -1323,6 +1449,34 @@ export default function Home() {
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
   };
 
+  // Pelanggan lama tidak aktif: tidak ada transaksi dalam 90 hari
+  // terakhir (atau belum pernah transaksi sama sekali). Dipakai kartu
+  // dashboard — ajakan sapa kembali, bukan sekadar daftar.
+  const inactiveCustomers = (() => {
+    const today = todayWib();
+    const cutoff = new Date(Date.parse(`${today}T00:00:00Z`) - 90 * 86400000).toISOString().slice(0, 10);
+    const lastJobByCustomer = {};
+    jobs.forEach((j) => {
+      if (!lastJobByCustomer[j.customer_id] || j.job_date > lastJobByCustomer[j.customer_id]) lastJobByCustomer[j.customer_id] = j.job_date;
+    });
+    return customers
+      .filter((c) => !lastJobByCustomer[c.id] || lastJobByCustomer[c.id] < cutoff)
+      .map((c) => ({ ...c, lastJob: lastJobByCustomer[c.id] || null }))
+      .sort((a, b) => (a.lastJob || "") < (b.lastJob || "") ? -1 : 1);
+  })();
+  // Sapa kembali pelanggan lama via chat wa.me — yang menekan Kirim
+  // tetap kamu di WhatsApp, tidak terkirim otomatis.
+  const sendInactiveFollowUp = (c) => {
+    const phone = toWaNumber(c.phone || "");
+    if (!/^62\d{8,13}$/.test(phone)) {
+      setError("Nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan.");
+      return;
+    }
+    const businessName = settings.business_name || "Pencatat Laporan";
+    const msg = `Halo ${c.name}, ini dari ${businessName}. Sudah lama tidak bertemu — apakah ada yang bisa kami bantu? Kami siap melayani kebutuhan Anda kembali. Terima kasih.`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+  };
+
   if (view === "loading") return <main className="max-w-3xl mx-auto p-6 text-zinc-400">Memuat…</main>;
 
   if (view === "login") {
@@ -1419,6 +1573,19 @@ export default function Home() {
 
   // Label bulan berjalan (WIB) untuk chip di kartu ringkasan dashboard.
   const monthLabel = (() => { const [y, m] = todayWib().split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" }); })();
+  const prevMonthLabel = (() => { const [y, m] = todayWib().split("-").map(Number); const pm = m === 1 ? 12 : m - 1; const py = m === 1 ? y - 1 : y; return new Date(py, pm - 1, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" }); })();
+
+  // Banding bulan lalu: satu baris perbandingan pemasukan bulan ini vs
+  // bulan lalu (persen + nominal bulan lalu). null bila belum ada data.
+  const monthCompare = (() => {
+    if (!dash) return null;
+    const cur = dash.month, prev = dash.lastMonth || 0;
+    if (prev > 0 && cur > prev) return { text: `Naik ${Math.round(((cur - prev) / prev) * 100)}% dari ${prevMonthLabel} (${fmtRp(prev)})`, cls: "text-emerald-400" };
+    if (prev > 0 && cur < prev) return { text: `Turun ${Math.round(((prev - cur) / prev) * 100)}% dari ${prevMonthLabel} (${fmtRp(prev)})`, cls: "text-red-400" };
+    if (prev > 0) return { text: `Sama dengan ${prevMonthLabel} (${fmtRp(prev)})`, cls: "text-zinc-400" };
+    if (cur > 0) return { text: "Bulan lalu: Rp0", cls: "text-zinc-400" };
+    return null;
+  })();
 
   // Menu profil dipakai di kedua header (klasik + Moni); posisinya
   // mengikuti sisi avatar yang membukanya (kiri di header Moni).
@@ -1514,6 +1681,7 @@ export default function Home() {
               </span>
             </div>
             <p className="font-black text-4xl sm:text-[2.75rem] leading-tight tracking-tight dash-num mt-1">{fmtRp(dash.month)}</p>
+            {monthCompare && <p className={`text-xs font-bold mt-1 ${monthCompare.cls}`}>{monthCompare.text}</p>}
             <div className="flex gap-8 mt-5 pt-4 border-t border-line">
               <div>
                 <p className="text-xs text-zinc-400">Hari ini</p>
@@ -1569,6 +1737,21 @@ export default function Home() {
             <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} onSelect={(part) => openJobsForStatus(part.label)} /></Card>
           </div>
           <p className="text-xs text-zinc-400">Ketuk batang grafik atau potongan donat untuk melihat transaksinya, dan ketuk kotak transaksi untuk melihat detailnya.</p>
+          {inactiveCustomers.length > 0 && (
+            <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
+              <h3 className="font-bold">Pelanggan lama tidak aktif</h3>
+              <p className="text-xs text-zinc-400">Tidak ada transaksi dalam 90 hari terakhir — coba sapa kembali.</p>
+              {inactiveCustomers.map((c) => (
+                <div key={c.id} className="flex justify-between gap-2 text-sm border border-line rounded-xl p-3">
+                  <div className="min-w-0">
+                    <button onClick={() => openHistory(c)} className="font-bold underline-offset-2 hover:underline text-left">{c.name}</button>
+                    <div className="text-zinc-400">{c.lastJob ? `Terakhir transaksi: ${c.lastJob}` : "Belum pernah transaksi"}{c.phone ? ` · ${c.phone}` : ""}</div>
+                  </div>
+                  <button onClick={() => sendInactiveFollowUp(c)} className="bg-[#25d366] hover:opacity-90 px-3 py-1.5 rounded-lg text-sm font-bold text-white shrink-0 self-start">Sapa via WA</button>
+                </div>
+              ))}
+            </div>
+          )}
           {selectedJobs.length > 0 && (
             <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
               <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
@@ -2278,6 +2461,20 @@ export default function Home() {
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
               Preview Invoice
             </button>
+            {paidOf(detailJob) > 0 && (
+              <>
+                <button onClick={() => sendReceiptWhatsApp(detailJob)} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3.5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 shadow">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                  </svg>
+                  Kirim Kwitansi via WhatsApp
+                </button>
+                <button onClick={() => downloadReceipt(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
+                  Unduh Kwitansi (PDF)
+                </button>
+              </>
+            )}
             <button onClick={() => openOfferForm(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M9 13h6M9 17h6" /></svg>
               Buat Surat Penawaran Harga

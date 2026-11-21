@@ -558,13 +558,16 @@ export async function handleApi(request, env) {
       const today = todayId();
       const month = today.slice(0, 7);
       const { from: mFrom, to: mTo } = monthRange(month);
+      const [py, pm] = month.split("-").map(Number);
+      const prevMonth = pm === 1 ? `${py - 1}-12` : `${py}-${String(pm - 1).padStart(2, "0")}`;
+      const { from: pFrom, to: pTo } = monthRange(prevMonth);
       const totalsSql = `SELECT COUNT(*) AS count,
                 COALESCE(SUM(amount), 0) AS total,
                 COALESCE(SUM(CASE WHEN status = 'lunas' THEN amount ELSE 0 END), 0) AS total_lunas,
                 COALESCE(SUM(CASE WHEN status = 'dp' THEN amount ELSE 0 END), 0) AS total_dp,
                 COALESCE(SUM(CASE WHEN status = 'belum' THEN amount ELSE 0 END), 0) AS total_belum
          FROM jobs WHERE business_id = ? AND job_date BETWEEN ? AND ?`;
-      const [customers, jobsRaw, prices, dailyTotals, monthlyTotals] = await Promise.all([
+      const [customers, jobsRaw, prices, dailyTotals, monthlyTotals, lastMonthTotals] = await Promise.all([
         (async () => { await ensureNextVisitColumn(env); return qAll(env, "SELECT * FROM customers WHERE business_id = ? ORDER BY name COLLATE NOCASE ASC LIMIT 500", bid); })(),
         (async () => {
           await ensurePaidAmountColumn(env);
@@ -575,6 +578,7 @@ export async function handleApi(request, env) {
         qAll(env, "SELECT * FROM service_prices WHERE business_id = ? ORDER BY service_type ASC", bid),
         qFirst(env, totalsSql, bid, today, today),
         qFirst(env, totalsSql, bid, mFrom, mTo),
+        qFirst(env, totalsSql, bid, pFrom, pTo),
       ]);
       const jobs = await attachJobItems(env, jobsRaw);
       return json({
@@ -584,7 +588,7 @@ export async function handleApi(request, env) {
         customers,
         jobs,
         prices,
-        totals: { daily: dailyTotals, monthly: monthlyTotals },
+        totals: { daily: dailyTotals, monthly: monthlyTotals, lastMonth: lastMonthTotals },
       });
     }
 
