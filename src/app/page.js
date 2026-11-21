@@ -1240,17 +1240,21 @@ export default function Home() {
     // Blok tanda tangan dirapatkan ke baris tanggal (seperti kwitansi lama).
     y += 6;
     // Bila halaman sudah terlalu penuh, pindah blok tanda tangan ke halaman baru.
-    if (y > 138) { doc.addPage(); y = 20; }
+    if (y > 135) { doc.addPage(); y = 20; }
     const sigTop = y;
+    // "Hormat kami," + tanggal (hari bulan tahun) di ATAS tanda tangan,
+    // semuanya lurus dalam satu kolom yang terpusat di atas tanda tangan
+    // (sigCx) — bukan rata kanan di tepi halaman seperti sebelumnya.
+    const stampCx = 237;
+    const sigCx = stampCx + 16;
+    const stampCy = sigTop + 40;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    doc.text("Hormat kami,", RIGHT, y, { align: "right" });
+    doc.text(formatDateId(job.job_date), sigCx, sigTop, { align: "center" });
+    doc.text("Hormat kami,", sigCx, sigTop + 6, { align: "center" });
     // Stempel = gambar yang diunggah di Pengaturan (bukan otomatis).
     // Tanda tangan digambar dulu, lalu gambar stempel di-overlay DI ATASNYA.
     // Stempel digeser agak ke kiri supaya tanda tangan keluar ke kanan.
-    const stampCx = 237;
-    const sigCx = stampCx + 16;
-    const stampCy = sigTop + 34;
     if (settings.signature) {
       try {
         const props = doc.getImageProperties(settings.signature);
@@ -1276,10 +1280,10 @@ export default function Home() {
     // Nama penandatangan (opsi di Pengaturan) bila diisi, kalau tidak nama usaha.
     const signerName = settings.signer_name || businessName;
     if (settings.signature) {
-      doc.text(signerName, sigCx, sigTop + 58, { align: "center" });
+      doc.text(signerName, sigCx, sigTop + 64, { align: "center" });
     } else {
-      doc.text("( ___________________ )", sigCx, sigTop + 54, { align: "center" });
-      doc.text(signerName, sigCx, sigTop + 62, { align: "center" });
+      doc.text("( ___________________ )", sigCx, sigTop + 60, { align: "center" });
+      doc.text(signerName, sigCx, sigTop + 68, { align: "center" });
     }
     return doc;
   };
@@ -2824,13 +2828,14 @@ export default function Home() {
                 <span className="font-bold text-right">{formatDateId(job.job_date)}</span>
               </div>
               {remaining > 0 && <p className="text-xs mt-2">Pembayaran sebagian (DP) dari total {fmtRp(job.amount)}; sisa {fmtRp(remaining)}.</p>}
-              <div className="mt-4 text-right">
-                <p>Hormat kami,</p>
-                <div className="relative h-[110px] w-[240px] ml-auto mt-1">
+              <div className="mt-4 ml-auto w-[240px]">
+                <p className="ml-[20%] w-[80%] text-center">{formatDateId(job.job_date)}</p>
+                <p className="ml-[20%] w-[80%] text-center">Hormat kami,</p>
+                <div className="relative h-[110px] mt-1">
                   {settings.signature && <img src={settings.signature} alt="" className="absolute top-1/2 -translate-y-1/2 max-w-[200px] max-h-[76px] object-contain" style={{ left: "60%", transform: "translate(-50%, -50%)" }} />}
                   {settings.stamp_image && <img src={settings.stamp_image} alt="" className="absolute top-1/2 -translate-y-1/2 max-w-[180px] max-h-[120px] object-contain z-10" style={{ left: "36%", transform: "translate(-50%, -50%)" }} />}
                 </div>
-                <p className="mt-1">{signerName}</p>
+                <p className="ml-[20%] w-[80%] text-center mt-1">{signerName}</p>
               </div>
             </div>
           </div>
