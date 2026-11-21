@@ -905,8 +905,8 @@ export default function Home() {
 
   // Gambar stempel: diunggah (bukan digambar otomatis), selalu PNG supaya
   // latar transparan terjaga — di kwitansi gambar ini di-overlay di atas
-  // tanda tangan. Sisi terpanjang dibatasi 1024px supaya detail teks
-  // stempel tetap tajam saat dicetak 48mm.
+  // tanda tangan. Sisi terpanjang dibatasi 600px (cukup tajam untuk cetak
+  // 48mm; 1024px membuat file PDF membengkak sampai ~5MB).
   const handleStampImageFile = (file) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) { setError("File stempel harus berupa gambar."); return; }
@@ -915,7 +915,7 @@ export default function Home() {
     const img = new Image();
     img.onload = () => {
       try {
-        const maxDim = 1024;
+        const maxDim = 600;
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
         const w = Math.max(1, Math.round(img.width * scale));
         const h = Math.max(1, Math.round(img.height * scale));
@@ -1133,11 +1133,40 @@ export default function Home() {
   // gambar yang diunggah di Pengaturan (settings.stamp_image), di-overlay
   // di atas tanda tangan di kwitansi.
 
+  // Perkecil gambar sebelum dimasukkan ke PDF, supaya file kwitansi tidak
+  // membengkak (stempel PNG 1024px bisa membuat PDF sampai ~5MB). Gambar
+  // diperkecil ke lebar yang sesuai ukuran tampilnya di PDF (dengan margin
+  // untuk cetak 300 DPI) — gambar yang sudah cukup kecil dikembalikan apa
+  // adanya. Selalu PNG supaya transparansi (stempel/tanda tangan) terjaga.
+  const downscaleImage = (dataUrl, maxW) => new Promise((resolve) => {
+    if (!dataUrl) { resolve(""); return; }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        if (img.width <= maxW) { resolve(dataUrl); return; }
+        const scale = maxW / img.width;
+        const canvas = document.createElement("canvas");
+        canvas.width = maxW;
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/png"));
+      } catch { resolve(dataUrl); }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
   const buildReceiptDoc = async (job) => {
     const { jsPDF } = await import("jspdf");
     // Kwitansi orientasi LANDSCAPE (A4 297x210mm), isi 14..283.
     const doc = new jsPDF({ orientation: "landscape" });
     const RIGHT = 283;
+    // Gambar diperkecil dulu ke ukuran tampilnya (logo 28mm, tanda tangan
+    // 55mm, stempel 48mm) supaya PDF tidak membengkak.
+    const logoImg = settings.business_logo ? await downscaleImage(settings.business_logo, 320) : "";
+    const sigImg = settings.signature ? await downscaleImage(settings.signature, 450) : "";
+    const stampImg = settings.stamp_image ? await downscaleImage(settings.stamp_image, 400) : "";
     const businessName = settings.business_name || "Pencatat Laporan";
     const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
     const paid = Number(job.paid_amount || 0);
@@ -1164,14 +1193,14 @@ export default function Home() {
     let y = 20;
     let textX = 14;
     let logoBottom = 0;
-    if (settings.business_logo) {
+    if (logoImg) {
       try {
-        const props = doc.getImageProperties(settings.business_logo);
-        const format = settings.business_logo.includes("image/jpeg") ? "JPEG" : "PNG";
+        const props = doc.getImageProperties(logoImg);
+        const format = logoImg.includes("image/jpeg") ? "JPEG" : "PNG";
         const aspect = props.width / props.height;
         const logoW = Math.min(28, 16 * aspect);
         const logoH = logoW / aspect;
-        doc.addImage(settings.business_logo, format, 14, 12, logoW, logoH);
+        doc.addImage(logoImg, format, 14, 12, logoW, logoH);
         textX = 14 + logoW + 4;
         logoBottom = 12 + logoH;
       } catch { /* logo rusak: lanjut tanpa logo, jangan gagalkan kwitansi */ }
@@ -1246,22 +1275,22 @@ export default function Home() {
     // Stempel = gambar yang diunggah di Pengaturan (bukan otomatis).
     // Tanda tangan digambar dulu, lalu gambar stempel di-overlay DI ATASNYA.
     // Stempel digeser agak ke kiri supaya tanda tangan keluar ke kanan.
-    if (settings.signature) {
+    if (sigImg) {
       try {
-        const props = doc.getImageProperties(settings.signature);
+        const props = doc.getImageProperties(sigImg);
         let sigW = 55;
         let sigH = sigW * (props.height / props.width);
         if (sigH > 20) { const s = 20 / sigH; sigH = 20; sigW *= s; }
-        doc.addImage(settings.signature, "PNG", sigCx - sigW / 2, stampCy - sigH / 2, sigW, sigH);
+        doc.addImage(sigImg, "PNG", sigCx - sigW / 2, stampCy - sigH / 2, sigW, sigH);
       } catch { /* abaikan bila gambar rusak */ }
     }
-    if (settings.stamp_image) {
+    if (stampImg) {
       try {
-        const props = doc.getImageProperties(settings.stamp_image);
+        const props = doc.getImageProperties(stampImg);
         let stW = 48;
         let stH = stW * (props.height / props.width);
         if (stH > 32) { const s = 32 / stH; stH = 32; stW *= s; }
-        doc.addImage(settings.stamp_image, "PNG", stampCx - stW / 2, stampCy - stH / 2, stW, stH);
+        doc.addImage(stampImg, "PNG", stampCx - stW / 2, stampCy - stH / 2, stW, stH);
       } catch { /* abaikan bila gambar rusak */ }
     }
     // Nama penandatangan di BAWAH tanda tangan, di kolom kosong — seperti
