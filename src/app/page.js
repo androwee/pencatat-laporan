@@ -8,6 +8,18 @@ const todayWib = () => {
   return d.toISOString().slice(0, 10);
 };
 
+// Bulan sebelum "YYYY-MM" (untuk banding bulan lalu dashboard).
+const prevMonthOf = (month) => {
+  const [y, m] = month.split("-").map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+};
+
+// Label panjang "YYYY-MM" → "November 2026" (id-ID).
+const monthLabelOf = (month) => {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+};
+
 const BUSINESS_KEY = "pencatat-business";
 
 /* Skema warna: satu garis shade yang sama (600/700/500) untuk semua skema
@@ -122,6 +134,11 @@ export default function Home() {
   const [tab, setTab] = useState("dashboard");
   const [error, setError] = useState("");
   const [dash, setDash] = useState(null);
+  // Bulan yang ditampilkan dashboard (YYYY-MM). Default bulan berjalan;
+  // diubah lewat chip kalender di kartu ringkasan.
+  const [dashMonth, setDashMonth] = useState(() => todayWib().slice(0, 7));
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [monthPickerValue, setMonthPickerValue] = useState("");
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState("");
   const [customerForm, setCustomerForm] = useState(emptyCustomer);
@@ -181,34 +198,41 @@ export default function Home() {
   const [reportFrom, setReportFrom] = useState(todayWib().slice(0, 7) + "-01");
   const [reportTo, setReportTo] = useState(todayWib());
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (monthOverride) => {
     try {
       setError("");
-      const month = todayWib().slice(0, 7);
-      const [daily, monthly, cust, allJobs] = await Promise.all([
+      // Bulan yang ditampilkan: argumen (saat ganti bulan) atau state
+      // dashMonth. Angka bulanan + tren + status + transaksi terbaru
+      // mengikuti bulan ini; Hari ini, Piutang, Total pelanggan dan Total
+      // transaksi tetap angka hari ini / sepanjang waktu.
+      const month = monthOverride || dashMonth || todayWib().slice(0, 7);
+      const prevMonth = prevMonthOf(month);
+      const [daily, monthly, prevMonthly, cust, allJobs] = await Promise.all([
         api(`/api/reports?period=daily&date=${todayWib()}`),
         api(`/api/reports?period=monthly&month=${month}`),
+        api(`/api/reports?period=monthly&month=${prevMonth}`),
         api("/api/customers"),
         api("/api/jobs"),
       ]);
-      const trend = groupByDate(allJobs.jobs);
+      const monthJobs = allJobs.jobs.filter((j) => String(j.job_date || "").slice(0, 7) === month);
+      const trend = groupByDate(monthJobs);
       const outstandingJobs = allJobs.jobs.filter((j) => j.status !== "lunas" && Math.max(0, Number(j.amount) - Number(j.paid_amount || 0)) > 0);
       setDash({
-        today: daily.totals.total, month: monthly.totals.total,
+        today: daily.totals.total, month: monthly.totals.total, lastMonth: prevMonthly.totals.total,
         customers: cust.customers.length, jobs: allJobs.jobs.length,
         outstanding: outstandingJobs.reduce((s, j) => s + Math.max(0, Number(j.amount) - Number(j.paid_amount || 0)), 0),
         outstandingCount: outstandingJobs.length,
         schedules: cust.customers.filter((c) => c.next_visit_date).sort((a, b) => (a.next_visit_date < b.next_visit_date ? -1 : 1)),
-        recent: allJobs.jobs.slice(0, 10),
+        recent: monthJobs.slice(0, 10),
         trendDates: trend.dates.slice(-10), trendValues: trend.values.slice(-10),
         status: statusParts({
-          total_lunas: allJobs.jobs.filter((j) => j.status === "lunas").reduce((s, j) => s + Number(j.amount), 0),
-          total_dp: allJobs.jobs.filter((j) => j.status === "dp").reduce((s, j) => s + Number(j.amount), 0),
-          total_belum: allJobs.jobs.filter((j) => j.status === "belum").reduce((s, j) => s + Number(j.amount), 0),
+          total_lunas: monthJobs.filter((j) => j.status === "lunas").reduce((s, j) => s + Number(j.amount), 0),
+          total_dp: monthJobs.filter((j) => j.status === "dp").reduce((s, j) => s + Number(j.amount), 0),
+          total_belum: monthJobs.filter((j) => j.status === "belum").reduce((s, j) => s + Number(j.amount), 0),
         }),
       });
     } catch (e) { setError(e.message); }
-  }, []);
+  }, [dashMonth]);
 
   const loadCustomers = useCallback(async (q = "") => {
     try {
@@ -1820,9 +1844,10 @@ export default function Home() {
 
   const reportTrend = report ? groupByDate(report.jobs) : { dates: [], values: [] };
 
-  // Label bulan berjalan (WIB) untuk chip di kartu ringkasan dashboard.
-  const monthLabel = (() => { const [y, m] = todayWib().split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" }); })();
-  const prevMonthLabel = (() => { const [y, m] = todayWib().split("-").map(Number); const pm = m === 1 ? 12 : m - 1; const py = m === 1 ? y - 1 : y; return new Date(py, pm - 1, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" }); })();
+  // Label bulan yang ditampilkan dashboard (bukan selalu bulan berjalan)
+  // untuk chip di kartu ringkasan dashboard.
+  const monthLabel = monthLabelOf(dashMonth || todayWib().slice(0, 7));
+  const prevMonthLabel = monthLabelOf(prevMonthOf(dashMonth || todayWib().slice(0, 7)));
 
   // Banding bulan lalu: satu baris perbandingan pemasukan bulan ini vs
   // bulan lalu (persen + nominal bulan lalu). null bila belum ada data.
@@ -1924,10 +1949,10 @@ export default function Home() {
           <section className="relative -mt-20 -mx-4 bg-panel border border-line rounded-t-[28px] p-5 sm:p-6 shadow">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm text-zinc-400">Pemasukan bulan ini</p>
-              <span className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-1.5 rounded-full shrink-0">
+              <button type="button" onClick={() => { setMonthPickerValue(dashMonth || todayWib().slice(0, 7)); setShowMonthPicker(true); }} aria-label="Pilih bulan dashboard" className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-1.5 rounded-full shrink-0 active:scale-[0.97]">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
                 {monthLabel}
-              </span>
+              </button>
             </div>
             <p className="font-black text-4xl sm:text-[2.75rem] leading-tight tracking-tight dash-num mt-1">{fmtRp(dash.month)}</p>
             {monthCompare && <p className={`text-xs font-bold mt-1 ${monthCompare.cls}`}>{monthCompare.text}</p>}
@@ -2328,6 +2353,21 @@ export default function Home() {
             </>
           )}
         </div>
+      )}
+
+      {showMonthPicker && (
+        <Modal title="Pilih bulan dashboard" onClose={() => setShowMonthPicker(false)}>
+          <div className="space-y-3">
+            <p className="text-sm text-zinc-400">Dashboard menampilkan pemasukan, tren, status, dan transaksi terbaru untuk bulan yang dipilih. Hari ini, Piutang, Total pelanggan, dan Total transaksi tetap angka hari ini / sepanjang waktu.</p>
+            <label className="block text-sm font-medium">Bulan
+              <input type="month" className="mt-1" value={monthPickerValue} onChange={(e) => setMonthPickerValue(e.target.value)} />
+            </label>
+            <div className="flex gap-2 flex-wrap pt-1">
+              <button type="button" onClick={() => { const m = monthPickerValue || todayWib().slice(0, 7); setDashMonth(m); setShowMonthPicker(false); loadDashboard(m); }} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">Tampilkan</button>
+              <button type="button" onClick={() => { const m = todayWib().slice(0, 7); setDashMonth(m); setShowMonthPicker(false); loadDashboard(m); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Bulan ini</button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {showCustomerModal && (
