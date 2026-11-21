@@ -2103,13 +2103,14 @@ export default function Home() {
             {settingsTab === "pengaturan" && (<>
             <div className="space-y-3">
               <h3 className="font-bold">Skema warna</h3>
-              <p className="text-sm text-zinc-400">Warna utama aplikasi (header, tombol, dan angka). Satu garis shade yang sama untuk semua skema, jadi tetap kalem.</p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="flex gap-3 overflow-x-auto pb-1">
                 {Object.entries(SCHEMES).map(([key, s]) => (
-                  <button key={key} type="button" onClick={() => applyScheme(key)}
-                    className={`flex flex-col items-center gap-1.5 rounded-2xl border p-3 ${scheme === key ? "border-accent bg-accent-soft" : "border-line"}`}>
-                    <span className="w-8 h-8 rounded-full border border-line" style={{ background: s.hex }} />
-                    <span className="text-xs font-bold">{s.label}</span>
+                  <button key={key} type="button" onClick={() => applyScheme(key)} aria-label={s.label} title={s.label}
+                    className={`w-11 h-11 rounded-full shrink-0 border border-white/25 flex items-center justify-center ${scheme === key ? "ring-2 ring-zinc-400 scale-110" : ""}`}
+                    style={{ background: s.hex }}>
+                    {scheme === key && (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12.5l5 5L20 6.5" /></svg>
+                    )}
                   </button>
                 ))}
               </div>
