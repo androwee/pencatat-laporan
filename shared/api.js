@@ -366,6 +366,20 @@ async function ensureJobItemsTable(env) {
   ensuredJobItems = true;
 }
 
+// Kolom payment_method (cara bayar) + bank_text (rekening per transaksi)
+// ditambahkan ke jobs yang sudah ada lewat ALTER, bukan migrasi manual.
+// Transaksi lama dianggap transfer (nilai default), karena sebelumnya
+// invoice selalu menampilkan rekening dari Pengaturan.
+let ensuredPaymentMethod = false;
+async function ensurePaymentMethodColumn(env) {
+  if (ensuredPaymentMethod) return;
+  try { await qRun(env, "ALTER TABLE jobs ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'transfer'"); } catch {}
+  try { await qRun(env, "ALTER TABLE jobs ADD COLUMN bank_text TEXT NOT NULL DEFAULT ''"); } catch {}
+  ensuredPaymentMethod = true;
+}
+const PAYMENT_METHODS = ["transfer", "cash"];
+const validPaymentMethod = (v) => PAYMENT_METHODS.includes(v) ? v : "transfer";
+
 // Kolom paid_amount (sudah dibayar) ditambahkan ke jobs yang sudah ada
 // lewat ALTER, bukan migrasi manual. Transaksi lama yang berstatus lunas
 // dianggap sudah dibayar penuh, karena status adalah satu-satunya bukti
@@ -823,14 +837,17 @@ export async function handleApi(request, env) {
       if (!isValidDate(jobDate)) return json({ error: "Tanggal tidak valid (YYYY-MM-DD)." }, 400);
       if (!STATUSES.includes(status)) return json({ error: "Status tidak valid." }, 400);
       await ensurePaidAmountColumn(env);
+      await ensurePaymentMethodColumn(env);
       const paidV = validatePaidAmount(body?.paid_amount, amount);
       if (paidV.error) return json({ error: paidV.error }, 400);
       const customer = await qFirst(env, "SELECT id FROM customers WHERE id = ? AND business_id = ?", customerId, bid);
       if (!customer) return json({ error: "Pelanggan tidak ditemukan." }, 404);
       const now = new Date().toISOString();
+      const paymentMethod = validPaymentMethod(body?.payment_method);
+      const bankText = String(body?.bank_text || "").trim().slice(0, 200);
       const res = await qRun(env,
-        "INSERT INTO jobs (business_id, customer_id, service_type, amount, paid_amount, status, job_date, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        bid, customerId, serviceType, amount, paidV.paid, status, jobDate, (body.note || "").trim(), now, now);
+        "INSERT INTO jobs (business_id, customer_id, service_type, amount, paid_amount, status, job_date, note, payment_method, bank_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        bid, customerId, serviceType, amount, paidV.paid, status, jobDate, (body.note || "").trim(), paymentMethod, bankText, now, now);
       await saveJobItems(env, res.meta.last_row_id, items);
       const row = await qFirst(env, "SELECT * FROM jobs WHERE id = ?", res.meta.last_row_id);
       return json({ job: { ...row, items } }, 201);
@@ -860,12 +877,15 @@ export async function handleApi(request, env) {
           return json({ error: "Data transaksi tidak valid." }, 400);
         }
         await ensurePaidAmountColumn(env);
+        await ensurePaymentMethodColumn(env);
         const existing = await qFirst(env, "SELECT * FROM jobs WHERE id = ? AND business_id = ?", id, bid);
         if (!existing) return json({ error: "Transaksi tidak ditemukan." }, 404);
         const paidV = validatePaidAmount(body?.paid_amount !== undefined ? body.paid_amount : existing.paid_amount, amount);
         if (paidV.error) return json({ error: paidV.error }, 400);
-        await qRun(env, "UPDATE jobs SET service_type = ?, amount = ?, paid_amount = ?, status = ?, job_date = ?, note = ?, updated_at = ? WHERE id = ?",
-          serviceType, amount, paidV.paid, status, jobDate, (body.note || "").trim(), new Date().toISOString(), id);
+        const paymentMethod = body?.payment_method !== undefined ? validPaymentMethod(body.payment_method) : (existing.payment_method || "transfer");
+        const bankText = body?.bank_text !== undefined ? String(body.bank_text || "").trim().slice(0, 200) : (existing.bank_text || "");
+        await qRun(env, "UPDATE jobs SET service_type = ?, amount = ?, paid_amount = ?, status = ?, job_date = ?, note = ?, payment_method = ?, bank_text = ?, updated_at = ? WHERE id = ?",
+          serviceType, amount, paidV.paid, status, jobDate, (body.note || "").trim(), paymentMethod, bankText, new Date().toISOString(), id);
         const row = await qFirst(env, "SELECT * FROM jobs WHERE id = ?", id);
         await saveJobItems(env, id, items);
         return json({ job: { ...row, items } });
@@ -1004,7 +1024,7 @@ export async function handleApi(request, env) {
       // ulang, supaya restore tidak bentrok dengan id usaha lain.
       await qRun(env, "CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, business_id INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', next_visit_date TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
       await ensureNextVisitColumn(env);
-      await qRun(env, "CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, business_id INTEGER NOT NULL DEFAULT 0, customer_id INTEGER NOT NULL REFERENCES customers(id), service_type TEXT NOT NULL, amount INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'lunas', job_date TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+      await qRun(env, "CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, business_id INTEGER NOT NULL DEFAULT 0, customer_id INTEGER NOT NULL REFERENCES customers(id), service_type TEXT NOT NULL, amount INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'lunas', job_date TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', payment_method TEXT NOT NULL DEFAULT 'transfer', bank_text TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
       await ensureServicePricesTable(env);
       await ensureJobItemsTable(env);
       await qRun(env, "DELETE FROM job_items WHERE job_id IN (SELECT id FROM jobs WHERE business_id = ?)", bid);

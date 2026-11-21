@@ -70,7 +70,7 @@ function Stat({ label, value, icon }) {
 }
 
 const emptyCustomer = { id: "", name: "", address: "", phone: "", next_visit_date: "" };
-const emptyJob = { id: "", customer_id: "", job_date: todayWib(), status: "lunas", note: "", paid_amount: "" };
+const emptyJob = { id: "", customer_id: "", job_date: todayWib(), status: "lunas", note: "", paid_amount: "", payment_method: "transfer", bank_text: "" };
 const emptyJobItem = { service_type: "", qty: 1, unit: "kubik", unit_price: "" };
 
 function Modal({ title, onClose, children }) {
@@ -552,7 +552,7 @@ export default function Home() {
   const openJobModal = (job) => {
     if (job) {
       setJobCustomerMode("existing");
-      setJobForm({ id: job.id, customer_id: String(job.customer_id), job_date: job.job_date, status: job.status, note: job.note || "", paid_amount: String(job.paid_amount ?? 0) });
+      setJobForm({ id: job.id, customer_id: String(job.customer_id), job_date: job.job_date, status: job.status, note: job.note || "", paid_amount: String(job.paid_amount ?? 0), payment_method: job.payment_method || "transfer", bank_text: job.bank_text || "" });
       setJobItems(job.items?.length
         ? job.items.map((it) => ({ service_type: it.service_type, qty: it.qty, unit: it.unit, unit_price: String(it.unit_price) }))
         : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: String(job.amount) }]);
@@ -574,7 +574,7 @@ export default function Home() {
   // Simpan sendiri, supaya tidak ada duplikat yang tidak disengaja.
   const duplicateJob = (job) => {
     setJobCustomerMode("existing");
-    setJobForm({ id: "", customer_id: String(job.customer_id), job_date: todayWib(), status: "belum", note: job.note || "", paid_amount: "" });
+    setJobForm({ id: "", customer_id: String(job.customer_id), job_date: todayWib(), status: "belum", note: job.note || "", paid_amount: "", payment_method: job.payment_method || "transfer", bank_text: job.bank_text || "" });
     setJobItems(job.items?.length
       ? job.items.map((it) => ({ service_type: it.service_type, qty: it.qty, unit: it.unit, unit_price: String(it.unit_price) }))
       : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: String(job.amount) }]);
@@ -688,7 +688,7 @@ export default function Home() {
         method: id ? "PUT" : "POST",
         body: JSON.stringify({
           customer_id: customerId, items, job_date: jobForm.job_date, status: jobForm.status, note: jobForm.note,
-          paid_amount: paidAmount,
+          paid_amount: paidAmount, payment_method: jobForm.payment_method || "transfer", bank_text: jobForm.bank_text || "",
         }),
       });
       setJobForm({ ...emptyJob, job_date: todayWib() });
@@ -948,6 +948,22 @@ export default function Home() {
     return d;
   };
 
+  // Baris cara bayar di invoice (PDF, preview, pesan WA) — dipakai di
+  // ketiga tempat supaya isinya selalu sama:
+  // - cash: nomor rekening disembunyikan, diganti tulisan bayar tunai.
+  // - transfer + rekening per transaksi terisi: pakai rekening itu
+  //   (ditulis langsung di form transaksi, menimpa Pengaturan).
+  // - transfer tanpa rekening per transaksi: pakai rekening Pengaturan.
+  // - tidak ada rekening sama sekali: baris tidak ditampilkan.
+  const invoicePaymentLine = (job) => {
+    if (job?.payment_method === "cash") return "Pembayaran cash kepada petugas di lapangan.";
+    if (job?.bank_text?.trim()) return `Pembayaran via transfer: ${job.bank_text.trim()}`;
+    if (settings.bank_name && settings.bank_account_number) {
+      return `Pembayaran via transfer: ${settings.bank_name} ${settings.bank_account_number}${settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}`;
+    }
+    return "";
+  };
+
   const sendInvoiceWhatsApp = async (job) => {
     const customer = customers.find((c) => c.id === Number(job.customer_id)) || {};
     const phone = toWaNumber(customer.phone || job.customer_phone);
@@ -958,9 +974,7 @@ export default function Home() {
       ? job.items
       : [{ service_type: job.service_type, qty: 1, unit: "paket", unit_price: job.amount, amount: job.amount }];
     const lines = items.map((it) => `- ${it.service_type} (${fmtQty(it.qty)} ${it.unit}) @ ${fmtRp(it.unit_price)} = ${fmtRp(it.amount)}`).join("\n");
-    const bankLine = settings.bank_name && settings.bank_account_number
-      ? `\nPembayaran: ${settings.bank_name} ${settings.bank_account_number}${settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}`
-      : "";
+    const bankLine = invoicePaymentLine(job) ? `\nPembayaran: ${invoicePaymentLine(job)}` : "";
     const paid = Number(job.paid_amount || 0);
     const remaining = Math.max(0, Number(job.amount) - paid);
     const paidLines = `${paid > 0 ? `\nSudah dibayar: ${fmtRp(paid)}` : ""}${remaining > 0 ? `\nSisa tagihan: ${fmtRp(remaining)}` : ""}`;
@@ -1068,10 +1082,10 @@ export default function Home() {
             ? "Status pembayaran: DP. Nominal di atas adalah total jasa; sisa pembayaran sesuai kesepakatan."
             : "Status pembayaran: Belum bayar. Mohon selesaikan pembayaran.";
       doc.splitTextToSize(note, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
-      if (settings.bank_name && settings.bank_account_number) {
+      const payLine = invoicePaymentLine(job);
+      if (payLine) {
         y += 2; doc.setFont("helvetica", "bold");
-        const bankLine = `Pembayaran via transfer: ${settings.bank_name} ${settings.bank_account_number}${settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}`;
-        doc.splitTextToSize(bankLine, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
+        doc.splitTextToSize(payLine, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
         doc.setFont("helvetica", "normal");
       }
       y += 6;
@@ -2395,6 +2409,16 @@ export default function Home() {
                 <option value="lunas">Lunas</option><option value="dp">DP</option><option value="belum">Belum bayar</option>
               </select>
             </label>
+            <label className="block text-sm font-medium">Cara bayar
+              <select className="mt-1" value={jobForm.payment_method || "transfer"} onChange={(e) => setJobForm({ ...jobForm, payment_method: e.target.value })}>
+                <option value="transfer">Transfer</option><option value="cash">Cash (tunai)</option>
+              </select>
+            </label>
+            {jobForm.payment_method !== "cash" && (
+              <label className="block text-sm font-medium">Rekening untuk invoice <span className="text-zinc-400 font-normal">— opsional, menimpa rekening di Pengaturan untuk invoice ini saja</span>
+                <input className="mt-1" value={jobForm.bank_text || ""} onChange={(e) => setJobForm({ ...jobForm, bank_text: e.target.value })} placeholder="Kosongkan untuk pakai rekening di Pengaturan, cth: BCA 1234567890 a.n. Andri Susilo" />
+              </label>
+            )}
             <label className="block text-sm font-medium">Sudah dibayar (Rp)
               <input className="mt-1" type="number" min="0" step="1" inputMode="numeric" placeholder="0 bila belum ada pembayaran"
                 value={jobForm.paid_amount}
@@ -2784,7 +2808,7 @@ export default function Home() {
               {paid > 0 && <p className="text-xs mt-2">Sudah dibayar: {fmtRp(paid)}</p>}
               {remaining > 0 && <p className="text-xs font-bold">Sisa tagihan: {fmtRp(remaining)}</p>}
               {job.note && <p className="text-xs mt-2">Catatan: {job.note}</p>}
-              {settings.bank_name && settings.bank_account_number && <p className="text-xs font-bold mt-2">Pembayaran via transfer: {settings.bank_name} {settings.bank_account_number}{settings.bank_account_holder ? ` a.n. ${settings.bank_account_holder}` : ""}</p>}
+              {invoicePaymentLine(job) && <p className="text-xs font-bold mt-2">{invoicePaymentLine(job)}</p>}
             </div>
           </div>
           <div className="mt-4 space-y-2">
