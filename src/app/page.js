@@ -137,8 +137,12 @@ export default function Home() {
   // Bulan yang ditampilkan dashboard (YYYY-MM). Default bulan berjalan;
   // diubah lewat chip kalender di kartu ringkasan.
   const [dashMonth, setDashMonth] = useState(() => todayWib().slice(0, 7));
+  // Filter bulan di halaman Pelanggan (YYYY-MM). null = semua pelanggan.
+  const [customerMonth, setCustomerMonth] = useState(null);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [monthPickerValue, setMonthPickerValue] = useState("");
+  // Modal pemilih bulan dipakai dua halaman: "dashboard" atau "customers".
+  const [monthPickerTarget, setMonthPickerTarget] = useState("dashboard");
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState("");
   const [customerForm, setCustomerForm] = useState(emptyCustomer);
@@ -382,7 +386,7 @@ export default function Home() {
   const showTab = useCallback((name) => {
     setTab(name);
     if (name === "dashboard") loadDashboard();
-    if (name === "customers") loadCustomers(search);
+    if (name === "customers") { loadCustomers(search); loadJobs(); }
     if (name === "jobs") { loadCustomers(); loadJobs(); }
     if (name === "reports") loadReport();
   }, [loadDashboard, loadCustomers, loadJobs, loadReport, search]);
@@ -1849,6 +1853,13 @@ export default function Home() {
   const monthLabel = monthLabelOf(dashMonth || todayWib().slice(0, 7));
   const prevMonthLabel = monthLabelOf(prevMonthOf(dashMonth || todayWib().slice(0, 7)));
 
+  // Pelanggan yang difilter bulan (halaman Pelanggan): hanya yang punya
+  // transaksi di bulan terpilih. null = semua pelanggan (tanpa filter).
+  const customersFiltered = customerMonth
+    ? customers.filter((c) => jobs.some((j) => j.customer_id === c.id && String(j.job_date || "").slice(0, 7) === customerMonth))
+    : customers;
+  const customerMonthLabel = customerMonth ? monthLabelOf(customerMonth) : "Semua bulan";
+
   // Banding bulan lalu: satu baris perbandingan pemasukan bulan ini vs
   // bulan lalu (persen + nominal bulan lalu). null bila belum ada data.
   const monthCompare = (() => {
@@ -1949,7 +1960,7 @@ export default function Home() {
           <section className="relative -mt-20 -mx-4 bg-panel border border-line rounded-t-[28px] p-5 sm:p-6 shadow">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm text-zinc-400">Pemasukan bulan ini</p>
-              <button type="button" onClick={() => { setMonthPickerValue(dashMonth || todayWib().slice(0, 7)); setShowMonthPicker(true); }} aria-label="Pilih bulan dashboard" className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-1.5 rounded-full shrink-0 active:scale-[0.97]">
+              <button type="button" onClick={() => { setMonthPickerTarget("dashboard"); setMonthPickerValue(dashMonth || todayWib().slice(0, 7)); setShowMonthPicker(true); }} aria-label="Pilih bulan dashboard" className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-1.5 rounded-full shrink-0 active:scale-[0.97]">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
                 {monthLabel}
               </button>
@@ -2082,7 +2093,13 @@ export default function Home() {
         <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="flex justify-between items-center gap-3">
             <h2 className="font-bold text-lg">Pelanggan</h2>
-            <button onClick={() => openCustomerModal(null)} className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Pelanggan</button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button type="button" onClick={() => { setMonthPickerTarget("customers"); setMonthPickerValue(customerMonth || dashMonth || todayWib().slice(0, 7)); setShowMonthPicker(true); }} aria-label="Pilih bulan pelanggan" className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-2 rounded-full active:scale-[0.97]">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
+                {customerMonthLabel}
+              </button>
+              <button onClick={() => openCustomerModal(null)} className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Pelanggan</button>
+            </div>
           </div>
           <label className="block text-sm font-medium">Cari pelanggan
             <input className="mt-1" placeholder="Nama atau nomor WA…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -2090,9 +2107,9 @@ export default function Home() {
           <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
               <input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }}
-                checked={customers.length > 0 && selectedCustomers.length === customers.length}
-                onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} />
-              Pilih semua ({customers.length})
+                checked={customersFiltered.length > 0 && selectedCustomers.length === customersFiltered.length}
+                onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customersFiltered)} />
+              Pilih semua ({customersFiltered.length})
             </label>
             <span className="text-sm text-zinc-400">{selectedCustomers.length} dipilih</span>
             <button onClick={bulkDeleteCustomers} disabled={!selectedCustomers.length}
@@ -2104,7 +2121,7 @@ export default function Home() {
           <p className="text-xs text-zinc-400">Tahan lama pada pelanggan untuk memilih.</p>
           <div className="bg-panel border border-line rounded-2xl overflow-y-auto max-h-[75vh]">
             <div className="sm:hidden p-4 space-y-3">
-              {customers.map((c) => (
+              {customersFiltered.map((c) => (
                 <div key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
                   className={`border rounded-xl p-3 select-none ${selectedCustomers.includes(c.id) ? "border-accent bg-accent-soft" : "border-line"}`}>
                   <div className="flex items-start gap-2">
@@ -2122,11 +2139,11 @@ export default function Home() {
                   </div>
                 </div>
               ))}
-              {!customers.length && <p className="text-zinc-400 text-sm">Belum ada pelanggan.</p>}
+              {!customersFiltered.length && <p className="text-zinc-400 text-sm">{customerMonth ? `Belum ada pelanggan dengan transaksi di ${customerMonthLabel}.` : "Belum ada pelanggan."}</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={customers.length > 0 && selectedCustomers.length === customers.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3">Jadwal berikutnya</th><th className="p-3"></th></tr></thead>
-              <tbody>{customers.map((c) => (
+            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={customersFiltered.length > 0 && selectedCustomers.length === customersFiltered.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customersFiltered)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3">Jadwal berikutnya</th><th className="p-3"></th></tr></thead>
+              <tbody>{customersFiltered.map((c) => (
                 <tr key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
                   className={`border-t border-line select-none ${selectedCustomers.includes(c.id) ? "bg-accent-soft" : ""}`}>
                   <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td><td className={`p-3 ${c.next_visit_date && c.next_visit_date <= todayWib() ? "text-orange-400" : ""}`}>{c.next_visit_date || "—"}</td>
@@ -2356,15 +2373,19 @@ export default function Home() {
       )}
 
       {showMonthPicker && (
-        <Modal title="Pilih bulan dashboard" onClose={() => setShowMonthPicker(false)}>
+        <Modal title={monthPickerTarget === "customers" ? "Pilih bulan pelanggan" : "Pilih bulan dashboard"} onClose={() => setShowMonthPicker(false)}>
           <div className="space-y-3">
-            <p className="text-sm text-zinc-400">Dashboard menampilkan pemasukan, tren, status, dan transaksi terbaru untuk bulan yang dipilih. Hari ini, Piutang, Total pelanggan, dan Total transaksi tetap angka hari ini / sepanjang waktu.</p>
+            <p className="text-sm text-zinc-400">{monthPickerTarget === "customers" ? "Halaman Pelanggan menampilkan hanya pelanggan yang punya transaksi di bulan yang dipilih." : "Dashboard menampilkan pemasukan, tren, status, dan transaksi terbaru untuk bulan yang dipilih. Hari ini, Piutang, Total pelanggan, dan Total transaksi tetap angka hari ini / sepanjang waktu."}</p>
             <label className="block text-sm font-medium">Bulan
               <input type="month" className="mt-1" value={monthPickerValue} onChange={(e) => setMonthPickerValue(e.target.value)} />
             </label>
             <div className="flex gap-2 flex-wrap pt-1">
-              <button type="button" onClick={() => { const m = monthPickerValue || todayWib().slice(0, 7); setDashMonth(m); setShowMonthPicker(false); loadDashboard(m); }} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">Tampilkan</button>
-              <button type="button" onClick={() => { const m = todayWib().slice(0, 7); setDashMonth(m); setShowMonthPicker(false); loadDashboard(m); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Bulan ini</button>
+              <button type="button" onClick={() => { const m = monthPickerValue || todayWib().slice(0, 7); if (monthPickerTarget === "customers") { setCustomerMonth(m); if (!jobs.length) loadJobs(); } else { setDashMonth(m); loadDashboard(m); } setShowMonthPicker(false); }} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">Tampilkan</button>
+              {monthPickerTarget === "customers" ? (
+                <button type="button" onClick={() => { setCustomerMonth(null); setShowMonthPicker(false); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Semua pelanggan</button>
+              ) : (
+                <button type="button" onClick={() => { const m = todayWib().slice(0, 7); setDashMonth(m); setShowMonthPicker(false); loadDashboard(m); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Bulan ini</button>
+              )}
             </div>
           </div>
         </Modal>
