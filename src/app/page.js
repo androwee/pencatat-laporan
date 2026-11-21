@@ -2106,10 +2106,10 @@ export default function Home() {
               <div className="flex gap-3 overflow-x-auto pb-1">
                 {Object.entries(SCHEMES).map(([key, s]) => (
                   <button key={key} type="button" onClick={() => applyScheme(key)} aria-label={s.label} title={s.label}
-                    className={`w-11 h-11 rounded-full shrink-0 border border-white/25 flex items-center justify-center ${scheme === key ? "ring-2 ring-zinc-400 scale-110" : ""}`}
+                    className={`w-9 h-9 rounded-full shrink-0 border border-white/25 flex items-center justify-center ${scheme === key ? "ring-2 ring-zinc-400 scale-110" : ""}`}
                     style={{ background: s.hex }}>
                     {scheme === key && (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12.5l5 5L20 6.5" /></svg>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12.5l5 5L20 6.5" /></svg>
                     )}
                   </button>
                 ))}
