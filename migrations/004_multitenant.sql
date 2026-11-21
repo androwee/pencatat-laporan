@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   bank_name TEXT NOT NULL DEFAULT '',
   bank_account_number TEXT NOT NULL DEFAULT '',
   bank_account_holder TEXT NOT NULL DEFAULT '',
+  stamp_enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

@@ -161,7 +161,7 @@ export default function Home() {
   const [duplicateWarning, setDuplicateWarning] = useState(null);
   const dupConfirmed = useRef(false);
   const [settings, setSettings] = useState({});
-  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "" });
+  const [settingsForm, setSettingsForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", business_logo: "", bank_name: "", bank_account_number: "", bank_account_holder: "", stamp_enabled: 1 });
   const [servicePrices, setServicePrices] = useState([]);
   const [priceForm, setPriceForm] = useState({ id: "", service_type: "", unit: "kubik", unit_price: "" });
   const [settingsSaved, setSettingsSaved] = useState("");
@@ -249,6 +249,7 @@ export default function Home() {
         business_phone: data.settings?.business_phone || "",
         business_website: data.settings?.business_website || "",
         business_logo: data.settings?.business_logo || "",
+        stamp_enabled: data.settings?.stamp_enabled ?? 1,
       });
     } catch (e) { /* settings opsional, abaikan */ }
   }, []);
@@ -292,6 +293,10 @@ export default function Home() {
       business_phone: data.settings?.business_phone || "",
       business_website: data.settings?.business_website || "",
       business_logo: data.settings?.business_logo || "",
+      bank_name: data.settings?.bank_name || "",
+      bank_account_number: data.settings?.bank_account_number || "",
+      bank_account_holder: data.settings?.bank_account_holder || "",
+      stamp_enabled: data.settings?.stamp_enabled ?? 1,
     });
     setServicePrices(data.prices || []);
     const trend = groupByDate(allJobs);
@@ -818,6 +823,7 @@ export default function Home() {
       bank_name: settings.bank_name || "",
       bank_account_number: settings.bank_account_number || "",
       bank_account_holder: settings.bank_account_holder || "",
+      stamp_enabled: settings.stamp_enabled ?? 1,
     });
     setSettingsSaved("");
     loadServicePrices();
@@ -1055,6 +1061,75 @@ export default function Home() {
     return `${terbilang(Math.floor(n / 1000000000000))} triliun${n % 1000000000000 ? ` ${terbilang(n % 1000000000000)}` : ""}`;
   };
 
+  // ---------- Stempel bundar kwitansi ----------
+  // Digambar langsung dengan jsPDF (lingkaran + teks melingkar + bintang),
+  // mengikuti contoh stempel bundar: nama usaha di busur atas, kota di
+  // busur bawah, kata tengah LUNAS (atau DP bila pembayaran sebagian).
+  const STAMP_RED = [230, 0, 18];
+  const drawStampStar = (doc, cx, cy, rOuter, rInner) => {
+    const pts = [];
+    for (let i = 0; i < 10; i++) {
+      const ang = (-90 + i * 36) * Math.PI / 180;
+      const r = i % 2 === 0 ? rOuter : rInner;
+      pts.push([cx + r * Math.cos(ang), cy + r * Math.sin(ang)]);
+    }
+    const lines = [];
+    for (let i = 0; i < 10; i++) {
+      const a = pts[i], b = pts[(i + 1) % 10];
+      lines.push([b[0] - a[0], b[1] - a[1]]);
+    }
+    doc.lines(lines, pts[0][0], pts[0][1], [1, 1], "F", true);
+  };
+  const drawStampArcText = (doc, text, cx, cy, r, fontSize, top) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(fontSize);
+    const chars = [...text];
+    const widths = chars.map((ch) => doc.getTextWidth(ch) || fontSize * 0.6);
+    const totalAngle = widths.reduce((s, w) => s + (w / r) * 180 / Math.PI, 0);
+    const centerAngle = top ? 270 : 90;
+    let angle = top ? centerAngle - totalAngle / 2 : centerAngle + totalAngle / 2;
+    chars.forEach((ch, i) => {
+      const w = widths[i];
+      const charAngle = (w / r) * 180 / Math.PI;
+      const mid = top ? angle + charAngle / 2 : angle - charAngle / 2;
+      const rad = mid * Math.PI / 180;
+      const x = cx + r * Math.cos(rad);
+      const y = cy + r * Math.sin(rad);
+      const rot = top ? 270 - mid : 90 - mid;
+      doc.text(ch, x, y, { angle: rot, align: "center" });
+      angle = top ? angle + charAngle : angle - charAngle;
+    });
+  };
+  const drawStamp = (doc, cx, cy, topText, bottomText, middleText) => {
+    try { doc.setGState(new doc.GState({ opacity: 0.85 })); } catch { /* abaikan */ }
+    doc.setDrawColor(...STAMP_RED);
+    doc.setTextColor(...STAMP_RED);
+    doc.setFillColor(...STAMP_RED);
+    doc.setLineWidth(1.2);
+    doc.circle(cx, cy, 18, "D");
+    doc.setLineWidth(0.6);
+    doc.circle(cx, cy, 16.5, "D");
+    doc.circle(cx, cy, 12, "D");
+    drawStampArcText(doc, topText, cx, cy, 14.5, 8.5, true);
+    drawStampArcText(doc, bottomText, cx, cy, 14.5, 8.5, false);
+    drawStampStar(doc, cx - 14.5, cy, 2.2, 0.9);
+    drawStampStar(doc, cx + 14.5, cy, 2.2, 0.9);
+    doc.setLineWidth(0.8);
+    doc.line(cx - 11.1, cy - 4.5, cx + 11.1, cy - 4.5);
+    doc.line(cx - 11.1, cy + 4.5, cx + 11.1, cy + 4.5);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(middleText, cx, cy + 1.8, { align: "center" });
+    try { doc.setGState(new doc.GState({ opacity: 1 })); } catch { /* abaikan */ }
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+  };
+  const stampCity = () => {
+    const last = cityFromAddress(settings.business_address || "");
+    const cleaned = String(last || "").replace(/[^a-zA-Z\s]/g, "").trim().split(/\s+/)[0] || "";
+    return (cleaned || "INDONESIA").toUpperCase();
+  };
+
   const buildReceiptDoc = async (job) => {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF();
@@ -1112,11 +1187,16 @@ export default function Home() {
       doc.setFont("helvetica", "normal");
     }
     y += 8;
+    const sigTop = y;
     const place = cityFromAddress(settings.business_address);
     doc.text(`${place ? `${place}, ` : ""}${formatDateId(job.job_date)}`, 196, y, { align: "right" }); y += 8;
     doc.text("Hormat kami,", 196, y, { align: "right" }); y += 6;
     doc.text(businessName, 196, y, { align: "right" }); y += 20;
     doc.text("( ___________________ )", 196, y, { align: "right" });
+    // Stempel otomatis di atas blok tanda tangan (bisa dimatikan di Pengaturan).
+    if (settings.stamp_enabled !== 0) {
+      drawStamp(doc, 158, sigTop + 14, (settings.business_name || "Pencatat Laporan").toUpperCase(), stampCity(), remaining === 0 ? "LUNAS" : "DP");
+    }
     return doc;
   };
 
@@ -2277,6 +2357,13 @@ export default function Home() {
                 </div>
                 <p className="text-xs text-zinc-400 mt-1">Gambar otomatis diperkecil (maks. 512px). Setelah pilih/ganti logo, ketuk "Simpan informasi usaha" di bawah.</p>
               </div>
+              <label className="flex items-start gap-3 border border-line rounded-xl p-3 cursor-pointer">
+                <input type="checkbox" className="w-5 h-5 accent-[var(--accent)] shrink-0 mt-0.5" checked={settingsForm.stamp_enabled === 1} onChange={(e) => setSettingsForm({ ...settingsForm, stamp_enabled: e.target.checked ? 1 : 0 })} />
+                <span>
+                  <span className="block font-bold text-sm">Stempel LUNAS di kwitansi</span>
+                  <span className="block text-xs text-zinc-400 mt-0.5">Tampilkan stempel bundar (nama usaha + LUNAS) di atas tanda tangan pada kwitansi PDF. Matikan bila tidak mau ada stempel.</span>
+                </span>
+              </label>
               <div className="flex items-center gap-3">
                 <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">Simpan informasi usaha</button>
                 {settingsSaved && <span className="text-sm text-emerald-400">{settingsSaved}</span>}
