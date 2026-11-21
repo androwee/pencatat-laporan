@@ -1148,12 +1148,15 @@ export default function Home() {
     const amountStr = fmtRp(paid).replace(/^Rp/, "");
     const valueX = 75;
     const valueW = RIGHT - valueX;
-    // Garis halus (anti-ubah) selebar penuh halaman (14..283).
-    const fullStripes = (topY, bottomY) => {
+    // Garis halus (anti-ubah) di belakang nilai, seperti pada referensi:
+    // terbilang selebar penuh kolom nilai (valueX..kanan), nominal hanya
+    // selebar angka (pita pendek di belakang nominal, tanggal tanpa garis).
+    // Garis TIDAK masuk ke bawah label (area label tetap putih).
+    const valueStripes = (leftX, rightX, topY, bottomY) => {
       doc.setDrawColor(200, 200, 200);
       doc.setLineWidth(0.2);
       for (let sy = topY; sy <= bottomY; sy += 1.2) {
-        doc.line(14, sy, RIGHT, sy);
+        doc.line(leftX, sy, rightX, sy);
       }
       doc.setDrawColor(0, 0, 0);
     };
@@ -1193,7 +1196,7 @@ export default function Home() {
     y += 10;
     // --- Baris isian: label tebal (kiri), nilai (kanan), garis tipis di bawah nilai ---
     const row = (label, lines, stripes = false) => {
-      if (stripes) fullStripes(y - 5, y + (lines.length - 1) * 6 + 3);
+      if (stripes) valueStripes(valueX, RIGHT, y - 5, y + (lines.length - 1) * 6 + 3);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.text(label, 14, y);
@@ -1220,8 +1223,9 @@ export default function Home() {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.text("Jumlah Rp", 14, y);
-    fullStripes(y - 5, y + 3);
     doc.setFontSize(14);
+    const amtW = doc.getTextWidth(amountStr);
+    valueStripes(valueX - 2, valueX + amtW + 4, y - 5, y + 3);
     doc.text(amountStr, valueX, y);
     doc.setFontSize(11);
     doc.text(formatDateId(job.job_date), RIGHT, y, { align: "right" });
