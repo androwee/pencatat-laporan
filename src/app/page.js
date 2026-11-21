@@ -2103,7 +2103,7 @@ export default function Home() {
             {settingsTab === "pengaturan" && (<>
             <div className="space-y-3">
               <h3 className="font-bold">Skema warna</h3>
-              <div className="flex gap-3 overflow-x-auto pb-1">
+              <div className="flex gap-3 overflow-x-auto justify-center px-2 py-2">
                 {Object.entries(SCHEMES).map(([key, s]) => (
                   <button key={key} type="button" onClick={() => applyScheme(key)} aria-label={s.label} title={s.label}
                     className={`w-9 h-9 rounded-full shrink-0 border border-white/25 flex items-center justify-center ${scheme === key ? "ring-2 ring-zinc-400 scale-110" : ""}`}
