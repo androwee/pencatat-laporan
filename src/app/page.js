@@ -1743,7 +1743,7 @@ export default function Home() {
             )}
           </div>
           <p className="text-xs text-zinc-400">Tahan lama pada transaksi untuk memilih.</p>
-          <div className="bg-panel border border-line rounded-2xl overflow-hidden">
+          <div className="bg-panel border border-line rounded-2xl overflow-y-auto max-h-[60vh]">
             <div className="sm:hidden p-4 space-y-3">
               {jobs.map((j) => (
                 <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
@@ -1876,7 +1876,7 @@ export default function Home() {
                     {!report.by_service.length && <tr><td colSpan="3" className="py-4 text-zinc-400">Belum ada data.</td></tr>}
                   </tbody></table>
               </div></div>
-              <div className="bg-panel border border-line rounded-2xl overflow-hidden"><h3 className="font-bold p-4 pb-0">Detail transaksi</h3>
+              <div className="bg-panel border border-line rounded-2xl overflow-y-auto max-h-[60vh]"><h3 className="font-bold p-4 pb-0">Detail transaksi</h3>
                 <div className="sm:hidden p-4 pt-2 space-y-3">
                   {report.jobs.map((j) => (
                     <div key={j.id} className="border border-line rounded-xl p-3">
