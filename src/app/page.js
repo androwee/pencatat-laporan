@@ -1228,8 +1228,6 @@ export default function Home() {
     const amtW = doc.getTextWidth(amountStr);
     valueStripes(valueX - 2, valueX + amtW + 4, y - 5, y + 3);
     doc.text(amountStr, valueX, y);
-    doc.setFontSize(11);
-    doc.text(formatDateId(job.job_date), RIGHT, y, { align: "right" });
     y += 10;
     if (remaining > 0) {
       doc.setFont("helvetica", "normal");
@@ -2825,7 +2823,6 @@ export default function Home() {
                   <span className="font-bold">Jumlah Rp</span>
                   <span className="font-bold text-lg px-1" style={{ backgroundImage: stripeBg }}>{amountStr}</span>
                 </div>
-                <span className="font-bold text-right">{formatDateId(job.job_date)}</span>
               </div>
               {remaining > 0 && <p className="text-xs mt-2">Pembayaran sebagian (DP) dari total {fmtRp(job.amount)}; sisa {fmtRp(remaining)}.</p>}
               <div className="mt-4 ml-auto w-[240px]">
