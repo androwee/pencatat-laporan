@@ -152,6 +152,7 @@ export default function Home() {
   const [businessForm, setBusinessForm] = useState({ business_name: "", business_address: "", business_phone: "", business_website: "", bank_name: "", bank_account_number: "", bank_account_holder: "" });
   const [businessError, setBusinessError] = useState("");
   const [invoicePreview, setInvoicePreview] = useState(null);
+  const [receiptPreview, setReceiptPreview] = useState(null);
   const [offerForm, setOfferForm] = useState(null);
   const [offerJob, setOfferJob] = useState(null);
   const [offerPreview, setOfferPreview] = useState(null);
@@ -1331,6 +1332,19 @@ export default function Home() {
 
   const closeInvoicePreview = () => {
     setInvoicePreview(null);
+  };
+
+  // Preview kwitansi sebagai HTML (instan, dari data yang sudah dimuat),
+  // supaya andro bisa cek hasil tanpa unduh PDF berulang. Isinya
+  // mencerminkan PDF: header, baris-baris + garis halus di terbilang &
+  // nominal, blok tanda tangan + stempel overlay.
+  const previewReceipt = (job) => {
+    setDetailJob(null);
+    setReceiptPreview({ job });
+  };
+
+  const closeReceiptPreview = () => {
+    setReceiptPreview(null);
   };
 
   const openPdfViewer = async (job) => {
@@ -2662,6 +2676,10 @@ export default function Home() {
             </button>
             {paidOf(detailJob) > 0 && (
               <>
+                <button onClick={() => previewReceipt(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                  Preview Kwitansi
+                </button>
                 <button onClick={() => sendReceiptWhatsApp(detailJob)} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3.5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 shadow">
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -2750,6 +2768,76 @@ export default function Home() {
             <button onClick={() => downloadInvoice(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
             <button onClick={() => { const j = invoicePreview.job; closeInvoicePreview(); sendInvoiceWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">Kirim via WhatsApp</button>
             <button onClick={closeInvoicePreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tutup preview</button>
+          </div>
+        </Modal>
+        );
+      })()}
+
+      {receiptPreview && (() => {
+        const job = receiptPreview.job;
+        const paid = Number(job.paid_amount || 0);
+        const remaining = Math.max(0, Number(job.amount) - paid);
+        const receiptNo = receiptNoOf(job);
+        const custText = `${job.customer_name || ""}${job.customer_phone ? ` (${job.customer_phone})` : ""}`;
+        const serviceText = (job.items?.length ? job.items.map((it) => it.service_type) : [job.service_type]).filter(Boolean).join(", ");
+        const wordsTitle = `${terbilang(paid)} rupiah`.replace(/\b\w/g, (c) => c.toUpperCase());
+        const amountStr = fmtRp(paid).replace(/^Rp/, "");
+        const stripeBg = "repeating-linear-gradient(to bottom, #c8c8c8 0px, #c8c8c8 0.75px, transparent 0.75px, transparent 4.5px)";
+        const signerName = settings.signer_name || settings.business_name || "Pencatat Laporan";
+        return (
+        <Modal title="Preview Kwitansi" onClose={closeReceiptPreview}>
+          <div className="relative bg-white text-black rounded-xl overflow-hidden border border-line text-sm">
+            <div className="relative z-10 p-4">
+              <div className="flex gap-3 items-start justify-between">
+                <div className="min-w-0">
+                  <p className="font-bold text-base leading-tight">{settings.business_name || "Pencatat Laporan"}</p>
+                  {settings.business_phone && <p className="text-xs text-zinc-600">Telp: {settings.business_phone}</p>}
+                  {settings.business_website && <p className="text-xs text-zinc-600">{settings.business_website}</p>}
+                  {settings.business_address && <p className="text-xs text-zinc-600">{settings.business_address}</p>}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="font-bold text-xl leading-tight">KWITANSI</p>
+                  <p className="text-xs mt-1">No. {receiptNo}</p>
+                </div>
+              </div>
+              <div className="border-t-2 border-black my-3" />
+              <div className="space-y-3">
+                <div className="flex gap-3">
+                  <span className="font-bold w-28 shrink-0">Telah Menerima Dari</span>
+                  <span className="flex-1 border-b border-zinc-400 pb-1 break-words">{custText}</span>
+                </div>
+                <div className="flex gap-3">
+                  <span className="font-bold w-28 shrink-0">Banyaknya Uang</span>
+                  <span className="flex-1 border-b border-zinc-400 pb-1 break-words" style={{ backgroundImage: stripeBg }}>{wordsTitle}</span>
+                </div>
+                <div className="flex gap-3">
+                  <span className="font-bold w-28 shrink-0">Untuk pembayaran</span>
+                  <span className="flex-1 border-b border-zinc-400 pb-1 break-words">{serviceText}</span>
+                </div>
+              </div>
+              <div className="border-t-2 border-black my-3" />
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-bold">Jumlah Rp</span>
+                  <span className="font-bold text-lg px-1" style={{ backgroundImage: stripeBg }}>{amountStr}</span>
+                </div>
+                <span className="font-bold text-right">{formatDateId(job.job_date)}</span>
+              </div>
+              {remaining > 0 && <p className="text-xs mt-2">Pembayaran sebagian (DP) dari total {fmtRp(job.amount)}; sisa {fmtRp(remaining)}.</p>}
+              <div className="mt-4 text-right">
+                <p>Hormat kami,</p>
+                <div className="relative h-[110px] w-[240px] ml-auto mt-1">
+                  {settings.signature && <img src={settings.signature} alt="" className="absolute top-1/2 -translate-y-1/2 max-w-[200px] max-h-[76px] object-contain" style={{ left: "60%", transform: "translate(-50%, -50%)" }} />}
+                  {settings.stamp_image && <img src={settings.stamp_image} alt="" className="absolute top-1/2 -translate-y-1/2 max-w-[180px] max-h-[120px] object-contain z-10" style={{ left: "36%", transform: "translate(-50%, -50%)" }} />}
+                </div>
+                <p className="mt-1">{signerName}</p>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            <button onClick={() => downloadReceipt(receiptPreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
+            <button onClick={() => { const j = receiptPreview.job; closeReceiptPreview(); sendReceiptWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">Kirim via WhatsApp</button>
+            <button onClick={closeReceiptPreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tutup preview</button>
           </div>
         </Modal>
         );
