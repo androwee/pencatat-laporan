@@ -1456,6 +1456,9 @@ export default function Home() {
       notes: "",
       closing: `Demikian penawaran harga ini kami sampaikan, besar harapan kami untuk dapat bekerjasama dan siap melayani kebutuhan Bapak/Ibu. Untuk pemesanan dan informasi lebih lanjut, silakan hubungi kami di Telp/WA ${phone}${website ? ` atau kunjungi ${website}` : ""}. Kami ucapkan terimakasih.`,
       signer: "",
+      // Tanda tangan & stempel (dari Pengaturan): tampil bila dicentang.
+      // Default menyala bila usaha sudah mengunggah tanda tangan/stempel.
+      showSignature: !!(settings.signature || settings.stamp_image),
     });
   };
 
@@ -1526,10 +1529,41 @@ export default function Home() {
     y += 8;
     doc.setFont("helvetica", "bold");
     doc.text("Penanggung Jawab", 140, y); y += 6;
-    doc.text(businessName, 140, y); y += 14;
+    doc.text(businessName, 140, y); y += 6;
+    const sigCx = 168;
+    if (form.showSignature) {
+      // Tanda tangan + stempel (dari Pengaturan), di-overlay seperti di
+      // kwitansi: tanda tangan dulu, stempel di atasnya. Gambar diperkecil
+      // dulu supaya PDF tidak membengkak.
+      const sigImg = settings.signature ? await downscaleImage(settings.signature, 450) : "";
+      const stampImg = settings.stamp_image ? await downscaleImage(settings.stamp_image, 400) : "";
+      const imgCy = y + 11;
+      if (sigImg) {
+        try {
+          const props = doc.getImageProperties(sigImg);
+          let sigW = 40;
+          let sigH = sigW * (props.height / props.width);
+          if (sigH > 14) { const s = 14 / sigH; sigH = 14; sigW *= s; }
+          doc.addImage(sigImg, "PNG", sigCx - sigW / 2, imgCy - sigH / 2, sigW, sigH);
+        } catch { /* abaikan bila gambar rusak */ }
+      }
+      if (stampImg) {
+        try {
+          const props = doc.getImageProperties(stampImg);
+          let stW = 30;
+          let stH = stW * (props.height / props.width);
+          if (stH > 20) { const s = 20 / stH; stH = 20; stW *= s; }
+          doc.addImage(stampImg, "PNG", sigCx - stW / 2, imgCy - stH / 2, stW, stH);
+        } catch { /* abaikan bila gambar rusak */ }
+      }
+      y += 22;
+    } else {
+      y += 8;
+    }
     doc.setFont("helvetica", "normal");
     doc.text("(............................................)", 140, y); y += 6;
-    if (form.signer) doc.text(form.signer, 140, y);
+    const signerName = form.signer || settings.signer_name || "";
+    if (signerName) doc.text(signerName, 140, y);
     return doc;
   };
 
@@ -2974,6 +3008,10 @@ export default function Home() {
               <label className="font-bold text-sm">Nama penandatangan <span className="text-zinc-400 font-normal">(opsional)</span></label>
               <input className="mt-1" value={offerForm.signer} onChange={(e) => setOfferForm({ ...offerForm, signer: e.target.value })} placeholder="Dibiarkan kosong bila belum ada" />
             </div>
+            <label className="flex items-start gap-2 text-sm font-medium cursor-pointer">
+              <input type="checkbox" className="w-4 h-4 mt-0.5 accent-[var(--accent)] shrink-0" style={{ width: "auto" }} checked={!!offerForm.showSignature} onChange={(e) => setOfferForm({ ...offerForm, showSignature: e.target.checked })} />
+              <span>Tambahkan tanda tangan & stempel <span className="text-zinc-400 font-normal">— memakai gambar tanda tangan dan stempel dari Profil usaha (Pengaturan)</span></span>
+            </label>
           </div>
           <div className="mt-5 space-y-2">
             <button onClick={sendOfferWhatsApp} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3.5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 shadow">Kirim via WhatsApp</button>
@@ -3050,8 +3088,14 @@ export default function Home() {
               <div className="mt-6 ml-auto w-44 text-xs">
                 <p className="font-bold">Penanggung Jawab</p>
                 <p className="font-bold">{businessName}</p>
-                <p className="mt-8">(............................................)</p>
-                {form.signer && <p>{form.signer}</p>}
+                {form.showSignature && (settings.signature || settings.stamp_image) && (
+                  <div className="relative h-20 my-1">
+                    {settings.signature && <img src={settings.signature} alt="Tanda tangan" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 max-w-full max-h-full object-contain" />}
+                    {settings.stamp_image && <img src={settings.stamp_image} alt="Stempel" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 max-w-full max-h-full object-contain z-10" />}
+                  </div>
+                )}
+                <p className={form.showSignature && (settings.signature || settings.stamp_image) ? "mt-1" : "mt-8"}>(............................................)</p>
+                {(form.signer || settings.signer_name) && <p>{form.signer || settings.signer_name}</p>}
               </div>
             </div>
           </div>
