@@ -1207,28 +1207,60 @@ export default function Home() {
   };
   // Teks busur mengikuti elips: posisi (cx+rx·cos, cy+ry·sin), rotasi huruf
   // mengikuti garis singgung elips (rumus atan2 — sama dengan lingkaran
-  // bila rx=ry).
+  // bila rx=ry). Spasi RATA per panjang busur (bukan per sudut parameter):
+  // pada elips, 1 derajat sudut parameter di puncak busur lebih panjang
+  // daripada di sisi, jadi spasi per sudut membuat huruf di tengah renggang
+  // dan di ujung rapat ("melenceng"). Tabel panjang busur kumulatif di
+  // sekitar pusat busur, tiap huruf diletakkan pada jarak busur yang sama.
   const drawStampEllipseArcText = (doc, text, cx, cy, rx, ry, fontSize, top) => {
     doc.setFont("helvetica", "bold");
     const chars = [...text];
     const n = chars.length;
     if (!n) return;
     const step = Math.min(8, 100 / n);
-    doc.setFontSize(step >= 7.5 ? fontSize : step >= 7 ? 8.5 : 8);
-    const total = step * n;
+    const fs = step >= 7.5 ? fontSize : step >= 7 ? 8.5 : 8;
+    doc.setFontSize(fs);
+    const charAdvance = fs * 0.21; // ~2,0mm pada 9,5pt
+    const totalLen = n * charAdvance;
     const centerAngle = top ? 270 : 90;
-    let angle = top ? centerAngle - total / 2 : centerAngle + total / 2;
-    chars.forEach((ch) => {
-      const mid = top ? angle + step / 2 : angle - step / 2;
-      const rad = mid * Math.PI / 180;
+    const range = 90;
+    const N = 900;
+    const samples = [];
+    let cum = 0;
+    let prev = null;
+    for (let i = 0; i <= N; i++) {
+      const a = centerAngle - range + (2 * range * i) / N;
+      const rad = (a * Math.PI) / 180;
+      const x = rx * Math.cos(rad);
+      const y = ry * Math.sin(rad);
+      if (prev) cum += Math.hypot(x - prev[0], y - prev[1]);
+      samples.push([a, cum]);
+      prev = [x, y];
+    }
+    const centerLen = samples[Math.floor(N / 2)][1];
+    const angleAtLen = (target) => {
+      if (target <= samples[0][1]) return samples[0][0];
+      for (let i = 1; i < samples.length; i++) {
+        if (samples[i][1] >= target) {
+          const [a0s, l0] = samples[i - 1];
+          const [a1s, l1] = samples[i];
+          const frac = (target - l0) / (l1 - l0 || 1);
+          return a0s + (a1s - a0s) * frac;
+        }
+      }
+      return samples[samples.length - 1][0];
+    };
+    chars.forEach((ch, i) => {
+      const targetLen = centerLen + (i + 0.5) * charAdvance - totalLen / 2;
+      const a = angleAtLen(targetLen);
+      const rad = (a * Math.PI) / 180;
       const cos = Math.cos(rad), sin = Math.sin(rad);
       const x = cx + rx * cos;
       const y = cy + ry * sin;
       const rot = top
-        ? Math.atan2(-rx * cos, -ry * sin) * 180 / Math.PI
-        : Math.atan2(rx * cos, ry * sin) * 180 / Math.PI;
+        ? (Math.atan2(-rx * cos, -ry * sin) * 180) / Math.PI
+        : (Math.atan2(rx * cos, ry * sin) * 180) / Math.PI;
       doc.text(ch, x, y, { angle: rot, align: "center" });
-      angle = top ? angle + step : angle - step;
     });
   };
   // Model 3: stempel oval seperti varian 3 di template (tanpa gambar masjid).
@@ -1276,7 +1308,14 @@ export default function Home() {
     const paid = Number(job.paid_amount || 0);
     const remaining = Math.max(0, Number(job.amount) - paid);
     const receiptNo = receiptNoOf(job);
-    let y = 18;
+    const custPhone = customer.phone || job.customer_phone || "";
+    const custText = `${job.customer_name || customer.name || ""}${custPhone ? ` (${custPhone})` : ""}`;
+    const serviceText = (job.items?.length ? job.items.map((it) => it.service_type) : [job.service_type]).filter(Boolean).join(", ");
+    const amountStr = fmtRp(paid).replace(/^Rp/, "");
+    const valueX = 75;
+    const valueW = 196 - valueX;
+    // --- Kop: nama + kontak usaha (kiri), KWITANSI + nomor (kanan) ---
+    let y = 20;
     let textX = 14;
     let logoBottom = 0;
     if (settings.business_logo) {
@@ -1284,83 +1323,116 @@ export default function Home() {
         const props = doc.getImageProperties(settings.business_logo);
         const format = settings.business_logo.includes("image/jpeg") ? "JPEG" : "PNG";
         const aspect = props.width / props.height;
-        const logoW = aspect >= 1 ? 28 : Math.min(28, 20 * aspect);
-        const logoH = aspect >= 1 ? 28 / aspect : 20;
+        const logoW = Math.min(28, 16 * aspect);
+        const logoH = logoW / aspect;
         doc.addImage(settings.business_logo, format, 14, 12, logoW, logoH);
         textX = 14 + logoW + 4;
         logoBottom = 12 + logoH;
       } catch { /* logo rusak: lanjut tanpa logo, jangan gagalkan kwitansi */ }
     }
-    doc.setFontSize(18); doc.setFont("helvetica", "bold");
-    doc.splitTextToSize(businessName, 196 - textX).forEach((l) => { doc.text(l, textX, y); y += 8; });
-    doc.setFontSize(11); doc.setFont("helvetica", "normal");
-    const businessLines = [settings.business_address, settings.business_phone, settings.business_website].filter(Boolean);
-    businessLines.forEach((line) => { doc.splitTextToSize(String(line), 196 - textX).forEach((l) => { doc.text(l, textX, y); y += 6; }); });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(businessName, textX, y);
+    doc.setFontSize(20);
+    doc.text("KWITANSI", 196, y, { align: "right" });
+    y += 7;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    if (settings.business_phone) doc.text(`Telp: ${settings.business_phone}`, textX, y);
+    doc.text(`No. ${receiptNo}`, 196, y, { align: "right" });
+    y += 6;
+    if (settings.business_website) { doc.text(settings.business_website, textX, y); y += 6; }
+    if (settings.business_address) { doc.text(settings.business_address, textX, y); y += 6; }
     y = Math.max(y, logoBottom) + 4;
-    doc.setDrawColor(230, 0, 18); doc.setLineWidth(0.8); doc.line(14, y, 196, y); y += 10;
-    doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.text("KWITANSI", 14, y); y += 8;
-    doc.setFontSize(11); doc.setFont("helvetica", "normal");
-    doc.text(`Nomor: ${receiptNo}`, 14, y); y += 6;
-    doc.text(`Tanggal: ${job.job_date}`, 14, y); y += 10;
-    doc.setFont("helvetica", "bold"); doc.text("Telah diterima dari:", 14, y); y += 7;
-    doc.setFont("helvetica", "normal");
-    const custLines = doc.splitTextToSize(`${job.customer_name || customer.name || ""}${customer.phone ? ` (${customer.phone})` : job.customer_phone ? ` (${job.customer_phone})` : ""}`, 182);
-    custLines.forEach((line) => { doc.text(line, 14, y); y += 6; });
-    y += 4;
-    doc.setFont("helvetica", "bold"); doc.text("Uang sejumlah:", 14, y); y += 7;
-    doc.setFont("helvetica", "normal");
-    doc.splitTextToSize(`${terbilang(paid)} rupiah`, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
-    y += 2;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(13);
-    doc.text(fmtRp(paid), 14, y); y += 12;
-    doc.setFont("helvetica", "normal"); doc.setFontSize(11);
-    doc.setFont("helvetica", "bold"); doc.text("Untuk pembayaran:", 14, y); y += 7;
-    doc.setFont("helvetica", "normal");
-    const serviceText = (job.items?.length ? job.items.map((it) => it.service_type) : [job.service_type]).filter(Boolean).join(", ");
-    doc.splitTextToSize(serviceText, 182).forEach((line) => { doc.text(line, 14, y); y += 6; });
-    if (remaining > 0) {
-      y += 2;
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    doc.line(14, y, 196, y);
+    y += 10;
+    // --- Baris isian: label tebal (kiri), nilai (kanan), garis tipis di bawah nilai ---
+    const row = (label, lines) => {
       doc.setFont("helvetica", "bold");
-      doc.text(`Pembayaran sebagian (DP) dari total ${fmtRp(job.amount)}; sisa ${fmtRp(remaining)}.`, 14, y); y += 6;
+      doc.setFontSize(11);
+      doc.text(label, 14, y);
       doc.setFont("helvetica", "normal");
+      lines.forEach((l) => { doc.text(l, valueX, y); y += 6; });
+      y += 2;
+      doc.setDrawColor(180, 180, 180);
+      doc.setLineWidth(0.3);
+      doc.line(valueX, y, 196, y);
+      doc.setDrawColor(0, 0, 0);
+      y += 8;
+    };
+    row("Telah Menerima Dari", doc.splitTextToSize(custText, valueW));
+    // Terbilang ditulis dengan huruf awal tiap kata kapital, seperti pada
+    // kwitansi formal ("Delapan Ratus Ribu Rupiah").
+    const wordsTitle = `${terbilang(paid)} rupiah`.replace(/\b\w/g, (c) => c.toUpperCase());
+    row("Banyaknya Uang", doc.splitTextToSize(wordsTitle, valueW));
+    row("Untuk pembayaran", doc.splitTextToSize(serviceText, valueW));
+    doc.setLineWidth(0.5);
+    doc.line(14, y, 196, y);
+    y += 10;
+    // --- Jumlah Rp + nominal (latar garis halus anti-ubah) + tanggal (kanan) ---
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Jumlah Rp", 14, y);
+    doc.setFontSize(14);
+    const amtW = doc.getTextWidth(amountStr);
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.2);
+    for (let sy = y - 5; sy <= y + 3; sy += 1.2) {
+      doc.line(valueX - 2, sy, valueX + amtW + 4, sy);
     }
-    y += 8;
+    doc.setDrawColor(0, 0, 0);
+    doc.text(amountStr, valueX, y);
+    doc.setFontSize(11);
+    doc.text(formatDateId(job.job_date), 196, y, { align: "right" });
+    y += 12;
+    if (remaining > 0) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(`Pembayaran sebagian (DP) dari total ${fmtRp(job.amount)}; sisa ${fmtRp(remaining)}.`, 14, y);
+      y += 8;
+    }
+    y += 14;
     // Bila halaman sudah terlalu penuh, pindah blok tanda tangan ke halaman baru.
     if (y > 200) { doc.addPage(); y = 20; }
     const sigTop = y;
-    const place = cityFromAddress(settings.business_address);
-    doc.text(`${place ? `${place}, ` : ""}${formatDateId(job.job_date)}`, 196, y, { align: "right" }); y += 8;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
     doc.text("Hormat kami,", 196, y, { align: "right" });
     // Stempel otomatis di ruang kosong di bawah "Hormat kami," (bisa
-    // dimatikan / diganti warnanya di Pengaturan), sedikit miring seperti
-    // stempel tangan pada surat resmi.
+    // dimatikan / diganti warnanya / modelnya di Pengaturan), sedikit miring
+    // seperti stempel tangan pada surat resmi. Stempel digeser agak ke kiri
+    // supaya tanda tangan bisa keluar ke kanan.
+    const stampCx = 150;
+    const sigCx = stampCx + 16;
     const stampCy = sigTop + 34;
     if (settings.stamp_enabled !== 0) {
-      drawStamp(doc, 158, stampCy, (settings.business_name || "Pencatat Laporan").toUpperCase(), stampCity(), remaining === 0 ? "LUNAS" : "DP", settings.stamp_color || "red", 12, settings.stamp_model || "1");
+      drawStamp(doc, stampCx, stampCy, (settings.business_name || "Pencatat Laporan").toUpperCase(), stampCity(), remaining === 0 ? "LUNAS" : "DP", settings.stamp_color || "red", 12, settings.stamp_model || "1");
     }
     // Tanda tangan yang diunggah (PNG transparan) digambar menimpa stempel,
-    // seperti menandatangani di atas stempel pada surat resmi — dibuat lebar
-    // (55mm) supaya keluar dari stempel di kiri-kanan.
+    // seperti menandatangani di atas stempel pada surat resmi — digeser ke
+    // kanan supaya setengahnya keluar dari stempel.
     if (settings.signature) {
       try {
         const props = doc.getImageProperties(settings.signature);
         let sigW = 55;
         let sigH = sigW * (props.height / props.width);
         if (sigH > 20) { const s = 20 / sigH; sigH = 20; sigW *= s; }
-        doc.addImage(settings.signature, "PNG", 158 - sigW / 2, stampCy - sigH / 2, sigW, sigH);
+        doc.addImage(settings.signature, "PNG", sigCx - sigW / 2, stampCy - sigH / 2, sigW, sigH);
       } catch { /* abaikan bila gambar rusak */ }
     }
     // Nama penandatangan di BAWAH tanda tangan, di kolom kosong — seperti
     // surat resmi (nama tercetak di bawah tanda tangan), terpusat di bawah
-    // stempel. Bila tidak ada gambar tanda tangan, tampilkan garis untuk
+    // tanda tangan. Bila tidak ada gambar tanda tangan, tampilkan garis untuk
     // tanda tangan basah di atas nama.
     // Nama penandatangan (opsi di Pengaturan) bila diisi, kalau tidak nama usaha.
     const signerName = settings.signer_name || businessName;
     if (settings.signature) {
-      doc.text(signerName, 158, sigTop + 58, { align: "center" });
+      doc.text(signerName, sigCx, sigTop + 58, { align: "center" });
     } else {
-      doc.text("( ___________________ )", 158, sigTop + 54, { align: "center" });
-      doc.text(signerName, 158, sigTop + 62, { align: "center" });
+      doc.text("( ___________________ )", sigCx, sigTop + 54, { align: "center" });
+      doc.text(signerName, sigCx, sigTop + 62, { align: "center" });
     }
     return doc;
   };
