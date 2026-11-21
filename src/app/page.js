@@ -10,6 +10,18 @@ const todayWib = () => {
 
 const BUSINESS_KEY = "pencatat-business";
 
+/* Skema warna: satu garis shade yang sama (600/700/500) untuk semua skema
+   supaya tetap kalem. Putih memakai abu-abu netral karena putih murni tidak
+   bisa jadi aksen; Full Hitam memakai hitam pekat. */
+const SCHEMES = {
+  blue: { label: "Biru", hex: "#0284C7" },
+  red: { label: "Merah", hex: "#DC2626" },
+  green: { label: "Hijau", hex: "#16A34A" },
+  orange: { label: "Oren", hex: "#EA580C" },
+  white: { label: "Putih", hex: "#64748B" },
+  black: { label: "Full Hitam", hex: "#171717" },
+};
+
 function storedBusinessId() {
   try { return localStorage.getItem(BUSINESS_KEY) || ""; } catch { return ""; }
 }
@@ -47,7 +59,7 @@ function Stat({ label, value, icon }) {
   return (
     <div className="bg-panel border border-line rounded-2xl p-4 flex items-center gap-3">
       {icon && (
-        <span className="w-11 h-11 rounded-2xl bg-sky-500/10 text-sky-600 flex items-center justify-center shrink-0">{icon}</span>
+        <span className="w-11 h-11 rounded-2xl bg-accent-soft text-accent flex items-center justify-center shrink-0">{icon}</span>
       )}
       <span className="min-w-0">
         <span className="block text-zinc-400 text-sm">{label}</span>
@@ -129,6 +141,7 @@ export default function Home() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [installHelp, setInstallHelp] = useState(false);
   const [theme, setTheme] = useState("dark");
+  const [scheme, setScheme] = useState("blue");
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedJobs, setSelectedJobs] = useState([]);
   const [detailJob, setDetailJob] = useState(null);
@@ -384,6 +397,8 @@ export default function Home() {
         setTheme(saved);
         document.documentElement.classList.toggle("theme-light", saved === "light");
       }
+      const savedScheme = localStorage.getItem("pencatat-scheme");
+      if (savedScheme && SCHEMES[savedScheme]) applyScheme(savedScheme);
     } catch {}
   }, []);
 
@@ -419,6 +434,17 @@ export default function Home() {
     setTheme(next);
     try { localStorage.setItem("pencatat-theme", next); } catch {}
     document.documentElement.classList.toggle("theme-light", next === "light");
+  };
+
+  const applyScheme = (next) => {
+    const name = SCHEMES[next] ? next : "blue";
+    setScheme(name);
+    try { localStorage.setItem("pencatat-scheme", name); } catch {}
+    const el = document.documentElement;
+    Object.keys(SCHEMES).forEach((k) => el.classList.remove("theme-" + k));
+    if (name !== "blue") el.classList.add("theme-" + name);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", SCHEMES[name].hex);
   };
 
   const handleLogout = async () => {
@@ -1309,7 +1335,7 @@ export default function Home() {
           <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
             aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
             title={theme === "dark" ? "Mode terang" : "Mode gelap"}
-            className="bg-panel border border-line rounded-full p-2.5 text-zinc-400 hover:text-persona shadow">
+            className="bg-panel border border-line rounded-full p-2.5 text-zinc-400 hover-text-accent shadow">
             {theme === "dark"
               ? fieldIcon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
               : fieldIcon(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)}
@@ -1369,7 +1395,7 @@ export default function Home() {
                   <input className="mt-1" inputMode="tel" value={businessForm.business_phone} onChange={(e) => setBusinessForm({ ...businessForm, business_phone: e.target.value })} />
                 </div>
                 {businessError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{businessError}</p>}
-                <button type="submit" className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Buat usaha</button>
+                <button type="submit" className="w-full bg-accent hover-bg-accent-dark text-white font-bold py-3.5 rounded-full">Buat usaha</button>
               </form>
               <button type="button" onClick={handleLogout} className="w-full text-center text-sm text-zinc-400 mt-4">Keluar</button>
             </div>
@@ -1381,7 +1407,7 @@ export default function Home() {
 
   const dockBtn = (name, label, icon) => (
     <button key={name} onClick={() => showTab(name)} aria-label={label}
-      className={`flex-1 flex flex-col items-center gap-0.5 px-1 py-2 text-[11px] font-bold transition-colors ${tab === name ? "text-persona" : "text-zinc-400 hover:text-persona"}`}>
+      className={`flex-1 flex flex-col items-center gap-0.5 px-1 py-2 text-[11px] font-bold transition-colors ${tab === name ? "text-accent" : "text-zinc-400 hover-text-accent"}`}>
       {icon}<span>{label}</span>
     </button>
   );
@@ -1431,7 +1457,7 @@ export default function Home() {
 
   return (
     <>
-        <header className="w-full text-white rounded-b-[28px]" style={{ background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" }}>
+        <header className="w-full text-white rounded-b-[28px]" style={{ background: "linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%)" }}>
           <div className="max-w-5xl mx-auto px-4 flex items-center gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-20">
             <div className="relative shrink-0">
               <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
@@ -1482,7 +1508,7 @@ export default function Home() {
           <section className="relative -mt-20 -mx-4 bg-panel border border-line rounded-t-[28px] p-5 sm:p-6 shadow">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm text-zinc-400">Pemasukan bulan ini</p>
-              <span className="inline-flex items-center gap-1.5 bg-sky-500/10 text-sky-600 text-xs font-bold px-3 py-1.5 rounded-full shrink-0">
+              <span className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-1.5 rounded-full shrink-0">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
                 {monthLabel}
               </span>
@@ -1513,7 +1539,7 @@ export default function Home() {
             <div className="bg-orange-500/10 border border-orange-500/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
               <span className="font-bold">Total piutang: {fmtRp(dash.outstanding)}</span>
               <span className="text-sm text-zinc-400">{dash.outstandingCount} transaksi belum lunas</span>
-              <button onClick={openPiutang} className="bg-persona px-4 py-2 rounded-xl font-bold text-sm">Lihat piutang</button>
+              <button onClick={openPiutang} className="bg-accent px-4 py-2 rounded-xl font-bold text-sm">Lihat piutang</button>
             </div>
           )}
           {(dash?.schedules || []).length > 0 && (
@@ -1546,23 +1572,23 @@ export default function Home() {
           {selectedJobs.length > 0 && (
             <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
               <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
-              <button onClick={bulkDeleteJobs} className="bg-persona hover:bg-persona-dark px-4 py-2 rounded-xl font-bold text-sm">Hapus yang dipilih</button>
+              <button onClick={bulkDeleteJobs} className="bg-accent hover-bg-accent-dark px-4 py-2 rounded-xl font-bold text-sm">Hapus yang dipilih</button>
               <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
             </div>
           )}
           <section className="bg-panel border border-line rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between gap-3 p-4 pb-0">
               <h2 className="font-bold">Transaksi Terbaru</h2>
-              <button onClick={() => showTab("jobs")} className="text-sky-600 font-bold text-sm shrink-0">Lihat Semua</button>
+              <button onClick={() => showTab("jobs")} className="text-accent font-bold text-sm shrink-0">Lihat Semua</button>
             </div>
             <p className="text-xs text-zinc-400 px-4 pt-1">Tahan lama pada transaksi untuk memilih.</p>
             <div className="sm:hidden p-4 pt-2 space-y-3">
               {dash.recent.map((j) => (
                 <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                  className={`border rounded-2xl p-3 select-none flex items-center gap-3 ${selectedJobs.includes(j.id) ? "border-persona bg-sky-500/10" : "border-line"}`}>
-                  <input type="checkbox" className="w-4 h-4 accent-[#0284C7] shrink-0" style={{ width: "auto" }}
+                  className={`border rounded-2xl p-3 select-none flex items-center gap-3 ${selectedJobs.includes(j.id) ? "border-accent bg-accent-soft" : "border-line"}`}>
+                  <input type="checkbox" className="w-4 h-4 accent-[var(--accent)] shrink-0" style={{ width: "auto" }}
                     checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} />
-                  <span className="w-11 h-11 rounded-full bg-sky-500/10 text-sky-600 font-black flex items-center justify-center shrink-0">{(j.customer_name || "?").charAt(0).toUpperCase()}</span>
+                  <span className="w-11 h-11 rounded-full bg-accent-soft text-accent font-black flex items-center justify-center shrink-0">{(j.customer_name || "?").charAt(0).toUpperCase()}</span>
                   <span className="min-w-0 flex-1">
                     <strong className="block truncate">{j.customer_name}</strong>
                     <span className="block text-zinc-400 text-sm truncate">{j.service_type} · {j.job_date}</span>
@@ -1582,7 +1608,7 @@ export default function Home() {
                 <tbody>
                   {dash.recent.map((j) => (
                     <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                      className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-sky-500/10" : ""}`}>
+                      className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-accent-soft" : ""}`}>
                       <td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td>
                       <td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status)}</td>
                     </tr>
@@ -1599,21 +1625,21 @@ export default function Home() {
         <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="flex justify-between items-center gap-3">
             <h2 className="font-bold text-lg">Pelanggan</h2>
-            <button onClick={() => openCustomerModal(null)} className="bg-persona hover:bg-persona-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Pelanggan</button>
+            <button onClick={() => openCustomerModal(null)} className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Pelanggan</button>
           </div>
           <label className="block text-sm font-medium">Cari pelanggan
             <input className="mt-1" placeholder="Nama atau nomor WA…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </label>
           <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }}
+              <input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }}
                 checked={customers.length > 0 && selectedCustomers.length === customers.length}
                 onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} />
               Pilih semua ({customers.length})
             </label>
             <span className="text-sm text-zinc-400">{selectedCustomers.length} dipilih</span>
             <button onClick={bulkDeleteCustomers} disabled={!selectedCustomers.length}
-              className="bg-persona hover:bg-persona-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">Hapus yang dipilih</button>
+              className="bg-accent hover-bg-accent-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">Hapus yang dipilih</button>
             {selectedCustomers.length > 0 && (
               <button onClick={() => setSelectedCustomers([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
             )}
@@ -1623,9 +1649,9 @@ export default function Home() {
             <div className="sm:hidden p-4 space-y-3">
               {customers.map((c) => (
                 <div key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
-                  className={`border rounded-xl p-3 select-none ${selectedCustomers.includes(c.id) ? "border-persona bg-sky-500/10" : "border-line"}`}>
+                  className={`border rounded-xl p-3 select-none ${selectedCustomers.includes(c.id) ? "border-accent bg-accent-soft" : "border-line"}`}>
                   <div className="flex items-start gap-2">
-                    <input type="checkbox" className="w-4 h-4 accent-[#0284C7] mt-1 shrink-0" style={{ width: "auto" }}
+                    <input type="checkbox" className="w-4 h-4 accent-[var(--accent)] mt-1 shrink-0" style={{ width: "auto" }}
                       checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} />
                     <strong>{c.name}</strong>
                   </div>
@@ -1634,7 +1660,7 @@ export default function Home() {
                   {c.next_visit_date && <div className={`text-sm mt-1 ${c.next_visit_date <= todayWib() ? "text-orange-400" : "text-zinc-400"}`}>Jadwal berikutnya: {c.next_visit_date}</div>}
                   <div className="flex gap-2 mt-3">
                     <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Riwayat</button>
-                    <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
+                    <button onClick={() => openCustomerModal(c)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
                     <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </div>
                 </div>
@@ -1642,14 +1668,14 @@ export default function Home() {
               {!customers.length && <p className="text-zinc-400 text-sm">Belum ada pelanggan.</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }} checked={customers.length > 0 && selectedCustomers.length === customers.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3">Jadwal berikutnya</th><th className="p-3"></th></tr></thead>
+            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={customers.length > 0 && selectedCustomers.length === customers.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customers)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3">Jadwal berikutnya</th><th className="p-3"></th></tr></thead>
               <tbody>{customers.map((c) => (
                 <tr key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
-                  className={`border-t border-line select-none ${selectedCustomers.includes(c.id) ? "bg-sky-500/10" : ""}`}>
-                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td><td className={`p-3 ${c.next_visit_date && c.next_visit_date <= todayWib() ? "text-orange-400" : ""}`}>{c.next_visit_date || "—"}</td>
+                  className={`border-t border-line select-none ${selectedCustomers.includes(c.id) ? "bg-accent-soft" : ""}`}>
+                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td><td className={`p-3 ${c.next_visit_date && c.next_visit_date <= todayWib() ? "text-orange-400" : ""}`}>{c.next_visit_date || "—"}</td>
                   <td className="p-3 whitespace-nowrap">
                     <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Riwayat</button>
-                    <button onClick={() => openCustomerModal(c)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
+                    <button onClick={() => openCustomerModal(c)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
                     <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </td>
                 </tr>))}
@@ -1663,7 +1689,7 @@ export default function Home() {
         <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="flex justify-between items-center gap-3">
             <h2 className="font-bold text-lg">Transaksi</h2>
-            <button onClick={() => openJobModal(null)} className="bg-persona hover:bg-persona-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Transaksi</button>
+            <button onClick={() => openJobModal(null)} className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Transaksi</button>
           </div>
           <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
             <h3 className="font-bold">Filter transaksi</h3>
@@ -1696,7 +1722,7 @@ export default function Home() {
               </label>
             </div>
             <div className="flex gap-2 flex-wrap items-center">
-              <button onClick={() => loadJobs()} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Terapkan filter</button>
+              <button onClick={() => loadJobs()} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">Terapkan filter</button>
               <button onClick={() => { setJobFilterType("all"); setJobFilterStatus(""); loadJobs({ from: "", to: "", status: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Reset</button>
               <span className="text-sm text-zinc-400">{jobs.length} transaksi · total {fmtRp(jobs.reduce((sum, j) => sum + Number(j.amount), 0))}</span>
             </div>
@@ -1704,14 +1730,14 @@ export default function Home() {
           </div>
           <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }}
+              <input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }}
                 checked={jobs.length > 0 && selectedJobs.length === jobs.length}
                 onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} />
               Pilih semua ({jobs.length})
             </label>
             <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
             <button onClick={bulkDeleteJobs} disabled={!selectedJobs.length}
-              className="bg-persona hover:bg-persona-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">Hapus yang dipilih</button>
+              className="bg-accent hover-bg-accent-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">Hapus yang dipilih</button>
             {selectedJobs.length > 0 && (
               <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
             )}
@@ -1721,7 +1747,7 @@ export default function Home() {
             <div className="sm:hidden p-4 space-y-3">
               {jobs.map((j) => (
                 <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                  className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-persona bg-sky-500/10" : "border-line"}`}>
+                  className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-accent bg-accent-soft" : "border-line"}`}>
                   <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
@@ -1730,7 +1756,7 @@ export default function Home() {
                   <div className="flex gap-2 mt-3 flex-wrap">
                     <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Detail</button>
                     <button onClick={() => duplicateJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Ulangi</button>
-                    <button onClick={() => openJobModal(j)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
+                    <button onClick={() => openJobModal(j)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
                     <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </div>
                 </div>
@@ -1738,16 +1764,16 @@ export default function Home() {
               {!jobs.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }} checked={jobs.length > 0 && selectedJobs.length === jobs.length} onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} aria-label="Pilih semua transaksi" /></th><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
+            <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={jobs.length > 0 && selectedJobs.length === jobs.length} onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} aria-label="Pilih semua transaksi" /></th><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
               <tbody>{jobs.map((j) => (
                 <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
-                  className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-sky-500/10" : ""}`}>
-                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[#0284C7]" style={{ width: "auto" }} checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} /></td><td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
+                  className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-accent-soft" : ""}`}>
+                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} /></td><td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
                   <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status)}</td>
                   <td className="p-3 whitespace-nowrap">
                     <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Detail</button>
                     <button onClick={() => duplicateJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Ulangi</button>
-                    <button onClick={() => openJobModal(j)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
+                    <button onClick={() => openJobModal(j)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
                     <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
                   </td>
                 </tr>))}
@@ -1827,7 +1853,7 @@ export default function Home() {
               )}
             </div>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={loadReport} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Tampilkan laporan</button>
+              <button onClick={loadReport} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">Tampilkan laporan</button>
               <button onClick={async () => { const d = await loadReport(); if (d) window.location.href = `/api/export?from=${d.from}&to=${d.to}`; }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Ekspor CSV</button>
             </div>
           </div>
@@ -1888,7 +1914,7 @@ export default function Home() {
               <input className="mt-1" type="date" value={customerForm.next_visit_date} onChange={(e) => setCustomerForm({ ...customerForm, next_visit_date: e.target.value })} />
             </label>
             <div className="flex gap-2 flex-wrap pt-1">
-              <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan pelanggan</button>
+              <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan pelanggan</button>
               <button type="button" onClick={() => { setShowCustomerModal(false); setCustomerForm(emptyCustomer); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
             </div>
           </form>
@@ -1901,9 +1927,9 @@ export default function Home() {
             {!jobForm.id && (
               <div className="flex gap-2" role="group" aria-label="Pilih pelanggan">
                 <button type="button" onClick={() => setJobCustomerMode("existing")}
-                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "existing" ? "bg-persona text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan lama</button>
+                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "existing" ? "bg-accent text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan lama</button>
                 <button type="button" onClick={() => setJobCustomerMode("new")}
-                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "new" ? "bg-persona text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan baru</button>
+                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "new" ? "bg-accent text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan baru</button>
               </div>
             )}
             {jobCustomerMode === "new" && !jobForm.id ? (
@@ -2005,7 +2031,7 @@ export default function Home() {
               <input className="mt-1" value={jobForm.note} onChange={(e) => setJobForm({ ...jobForm, note: e.target.value })} />
             </label>
             <div className="flex gap-2 flex-wrap pt-1">
-              <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan transaksi</button>
+              <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan transaksi</button>
               <button type="button" onClick={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobItems([{ ...emptyJobItem }]); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
             </div>
           </form>
@@ -2017,7 +2043,7 @@ export default function Home() {
           <div className="flex gap-1 border-b border-line overflow-x-auto">
             {[["profil", "Profil"], ["pengaturan", "Pengaturan"]].map(([key, label]) => (
               <button key={key} type="button" onClick={() => setSettingsTab(key)}
-                className={`px-3 py-2 text-sm font-bold whitespace-nowrap border-b-2 -mb-px ${settingsTab === key ? "text-red-500 border-persona" : "text-zinc-400 border-transparent"}`}>{label}</button>
+                className={`px-3 py-2 text-sm font-bold whitespace-nowrap border-b-2 -mb-px ${settingsTab === key ? "text-accent border-accent" : "text-zinc-400 border-transparent"}`}>{label}</button>
             ))}
           </div>
           <div className="space-y-5 pt-4">
@@ -2069,12 +2095,25 @@ export default function Home() {
                 <p className="text-xs text-zinc-400 mt-1">Gambar otomatis diperkecil (maks. 512px). Setelah pilih/ganti logo, ketuk "Simpan informasi usaha" di bawah.</p>
               </div>
               <div className="flex items-center gap-3">
-                <button type="submit" className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold">Simpan informasi usaha</button>
+                <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">Simpan informasi usaha</button>
                 {settingsSaved && <span className="text-sm text-emerald-400">{settingsSaved}</span>}
               </div>
             </form>
             )}
             {settingsTab === "pengaturan" && (<>
+            <div className="space-y-3">
+              <h3 className="font-bold">Skema warna</h3>
+              <p className="text-sm text-zinc-400">Warna utama aplikasi (header, tombol, dan angka). Satu garis shade yang sama untuk semua skema, jadi tetap kalem.</p>
+              <div className="grid grid-cols-3 gap-2">
+                {Object.entries(SCHEMES).map(([key, s]) => (
+                  <button key={key} type="button" onClick={() => applyScheme(key)}
+                    className={`flex flex-col items-center gap-1.5 rounded-2xl border p-3 ${scheme === key ? "border-accent bg-accent-soft" : "border-line"}`}>
+                    <span className="w-8 h-8 rounded-full border border-line" style={{ background: s.hex }} />
+                    <span className="text-xs font-bold">{s.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="border-t border-line pt-4 space-y-3">
               <h3 className="font-bold">Daftar Harga Jasa</h3>
               <p className="text-sm text-zinc-400">Isi sekali, setelah itu harga satuan terisi otomatis saat jasa ini dipilih di form transaksi. Mengubah harga di sini hanya memengaruhi transaksi baru, transaksi lama tidak berubah.</p>
@@ -2093,7 +2132,7 @@ export default function Home() {
                   </label>
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  <button type="submit" className="bg-persona hover:bg-persona-dark px-4 py-2.5 rounded-xl font-bold text-sm flex-1">{priceForm.id ? "Simpan perubahan" : "Tambah harga"}</button>
+                  <button type="submit" className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-xl font-bold text-sm flex-1">{priceForm.id ? "Simpan perubahan" : "Tambah harga"}</button>
                   {priceForm.id && <button type="button" onClick={() => setPriceForm({ id: "", service_type: "", unit: "kubik", unit_price: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Batal</button>}
                 </div>
               </form>
@@ -2113,7 +2152,7 @@ export default function Home() {
             <div className="border-t border-line pt-4 space-y-2">
               <h3 className="font-bold mb-1">Cadangan data</h3>
               <p className="text-sm text-zinc-400">Unduh seluruh data (pelanggan, transaksi, daftar harga, dan pengaturan usaha) ke satu file JSON. Bila data terhapus salah atau bermasalah, pulihkan dari file itu. Restore mengganti seluruh data yang ada sekarang, jadi unduh cadangan dulu sebelum restore.</p>
-              <button type="button" onClick={downloadBackup} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold text-sm">Unduh cadangan</button>
+              <button type="button" onClick={downloadBackup} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm">Unduh cadangan</button>
               <label className="block text-sm text-zinc-400 pt-2">Pulihkan dari file cadangan:</label>
               <input type="file" accept=".json,application/json" onChange={(e) => pickRestoreFile(e.target.files?.[0] || null)} className="text-sm w-full" />
               {restorePreview?.error && <p className="text-sm text-red-400">{restorePreview.error}</p>}
@@ -2121,7 +2160,7 @@ export default function Home() {
                 <div className="border border-line rounded-xl p-3 text-sm space-y-2">
                   <p><strong>{restoreFile?.name}</strong>{restorePreview.exported_at && <span className="text-zinc-400"> · diekspor {restorePreview.exported_at.slice(0, 10)}</span>}</p>
                   <p className="text-zinc-400">{restorePreview.customers} pelanggan · {restorePreview.jobs} transaksi · {restorePreview.prices} harga jasa</p>
-                  <button type="button" onClick={doRestore} disabled={restoreBusy} className="bg-persona hover:bg-persona-dark px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">{restoreBusy ? "Memulihkan…" : "Pulihkan dari file ini"}</button>
+                  <button type="button" onClick={doRestore} disabled={restoreBusy} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">{restoreBusy ? "Memulihkan…" : "Pulihkan dari file ini"}</button>
                 </div>
               )}
               {backupMessage && <p className="text-sm text-emerald-400">{backupMessage}</p>}
@@ -2180,7 +2219,7 @@ export default function Home() {
                     {m.phone && <div className="text-zinc-400">{m.phone}</div>}
                     {m.address && <div className="text-zinc-400">{m.address}</div>}
                   </div>
-                  <button onClick={() => duplicateWarning.onUseExisting(m)} className="bg-persona px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">Pakai ini</button>
+                  <button onClick={() => duplicateWarning.onUseExisting(m)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">Pakai ini</button>
                 </div>
               ))}
             </div>
@@ -2367,7 +2406,7 @@ export default function Home() {
                 {offerForm.rows.map((r, i) => (
                   <div key={i} className="border border-line rounded-xl p-3 space-y-2">
                     <div className="flex items-center gap-2">
-                      <input type="checkbox" className="w-4 h-4 accent-[#0284C7] shrink-0" style={{ width: "auto" }} checked={r.checked} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, checked: e.target.checked } : x) })} aria-label="Sertakan layanan ini" />
+                      <input type="checkbox" className="w-4 h-4 accent-[var(--accent)] shrink-0" style={{ width: "auto" }} checked={r.checked} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, checked: e.target.checked } : x) })} aria-label="Sertakan layanan ini" />
                       <input value={r.service_type} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, service_type: e.target.value } : x) })} placeholder="Nama layanan" className="flex-1 min-w-0" />
                       <button type="button" onClick={() => setOfferForm({ ...offerForm, rows: offerForm.rows.filter((_, j) => j !== i) })} aria-label="Hapus layanan" className="bg-zinc-800 w-8 h-8 rounded-lg font-bold shrink-0">×</button>
                     </div>
@@ -2432,7 +2471,7 @@ export default function Home() {
             />
           </div>
           <div className="p-4 pt-0 pb-[max(1rem,env(safe-area-inset-bottom))] shrink-0">
-            <button onClick={() => setOfferEditField(null)} className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Selesai</button>
+            <button onClick={() => setOfferEditField(null)} className="w-full bg-accent hover-bg-accent-dark text-white font-bold py-3.5 rounded-full">Selesai</button>
           </div>
         </div>
       )}
@@ -2510,7 +2549,7 @@ export default function Home() {
               <input className="mt-1" inputMode="tel" value={businessForm.business_phone} onChange={(e) => setBusinessForm({ ...businessForm, business_phone: e.target.value })} />
             </div>
             {businessError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{businessError}</p>}
-            <button type="submit" className="w-full bg-persona hover:bg-persona-dark text-white font-bold py-3.5 rounded-full">Buat usaha</button>
+            <button type="submit" className="w-full bg-accent hover-bg-accent-dark text-white font-bold py-3.5 rounded-full">Buat usaha</button>
           </form>
         </Modal>
       )}
@@ -2519,7 +2558,7 @@ export default function Home() {
         {dockBtn("dashboard", "Dashboard", icon(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>))}
         {dockBtn("customers", "Pelanggan", icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>))}
         <button onClick={handleAddNew} aria-label="Tambah catatan baru"
-          className="mx-1 -mt-8 w-14 h-14 rounded-full bg-persona hover:bg-persona-dark text-white flex items-center justify-center shadow-lg shadow-sky-900/50 shrink-0">
+          className="mx-1 -mt-8 w-14 h-14 rounded-full bg-accent hover-bg-accent-dark text-white flex items-center justify-center shadow-lg shadow-black/50 shrink-0">
           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         </button>
         {dockBtn("jobs", "Transaksi", icon(<><path d="M5 3h14v18H5z" /><path d="M8 7h8M8 11h8M8 15h5" /></>))}

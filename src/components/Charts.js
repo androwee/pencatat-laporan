@@ -23,8 +23,8 @@ export function BarChart({ labels, values, onSelect }) {
           <g key={i} onClick={onSelect ? () => onSelect(labels[i], v) : undefined}
             style={onSelect ? { cursor: "pointer" } : undefined}>
             <title>{`${labels[i]}: ${fmtRp(v)}`}</title>
-            <rect x={x} y={y} width={bw} height={bh} fill="#0284C7" />
-            {bw >= 28 && <text x={x + bw / 2} y={y - 6} textAnchor="middle" fontSize="11" fontWeight="700" fill="#0284C7">{fmtRp(v)}</text>}
+            <rect x={x} y={y} width={bw} height={bh} fill="var(--accent)" />
+            {bw >= 28 && <text x={x + bw / 2} y={y - 6} textAnchor="middle" fontSize="11" fontWeight="700" className="chart-label">{fmtRp(v)}</text>}
             <text x={x + bw / 2} y={H - 8} textAnchor="middle" fontSize="11" fill="#667085">{labels[i].slice(5)}</text>
           </g>
         );
@@ -85,7 +85,7 @@ export function HBarChart({ rows }) {
         <div key={r.service_type} className="grid grid-cols-[140px_1fr_auto] gap-3 items-center text-sm max-sm:grid-cols-[1fr_auto] max-sm:[&>*:first-child]:col-span-2">
           <span className="truncate font-medium">{r.service_type}</span>
           <div className="h-5 bg-zinc-800 rounded-sm overflow-hidden">
-            <div className="h-full bg-persona" style={{ width: `${(Number(r.total) / max) * 100}%` }} />
+            <div className="h-full bg-accent" style={{ width: `${(Number(r.total) / max) * 100}%` }} />
           </div>
           <span className="text-zinc-300 whitespace-nowrap">{fmtRp(r.total)}</span>
         </div>

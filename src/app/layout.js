@@ -21,7 +21,7 @@ export default function RootLayout({ children }) {
       <body>
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{ if (localStorage.getItem('pencatat-theme') === 'light') document.documentElement.classList.add('theme-light'); }catch(e){}`,
+            __html: `try{ if (localStorage.getItem('pencatat-theme') === 'light') document.documentElement.classList.add('theme-light'); var s = localStorage.getItem('pencatat-scheme'); var hex = { blue: '#0284C7', red: '#DC2626', green: '#16A34A', orange: '#EA580C', white: '#64748B', black: '#171717' }; if (s && hex[s]) { if (s !== 'blue') document.documentElement.classList.add('theme-' + s); var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', hex[s]); } }catch(e){}`,
           }}
         />
         <script
