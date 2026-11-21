@@ -1126,9 +1126,10 @@ export default function Home() {
     const chars = [...text];
     const n = chars.length;
     if (!n) return;
-    // Bentang busur dibatasi 110° supaya huruf tetap di bagian atas/bawah
-    // (tidak menjalar ke sisi stempel); font mengecil bila nama panjang.
-    const step = Math.min(8, 110 / n);
+    // Bentang busur dibatasi 100° supaya huruf tetap di bagian atas/bawah
+    // (tidak menjalar ke sisi stempel dan terpotong ring); font mengecil
+    // bila nama panjang.
+    const step = Math.min(8, 100 / n);
     doc.setFontSize(step >= 7.5 ? fontSize : step >= 7 ? 8.5 : 8);
     const total = step * n;
     // Pusat busur digeser +tilt supaya setelah dimiringkan teks tetap
@@ -1165,10 +1166,10 @@ export default function Home() {
     doc.setLineWidth(0.6);
     doc.circle(cx, cy, 16.5, "D");
     doc.circle(cx, cy, 12, "D");
-    drawStampArcText(doc, topText, cx, cy, 14.5, 9.5, true, tilt);
-    drawStampArcText(doc, bottomText, cx, cy, 14.5, 9.5, false, tilt);
-    const [sx1, sy1] = rotPt(cx - 14.5, cy);
-    const [sx2, sy2] = rotPt(cx + 14.5, cy);
+    drawStampArcText(doc, topText, cx, cy, 14, 9.5, true, tilt);
+    drawStampArcText(doc, bottomText, cx, cy, 14, 9.5, false, tilt);
+    const [sx1, sy1] = rotPt(cx - 14, cy);
+    const [sx2, sy2] = rotPt(cx + 14, cy);
     drawStampStar(doc, sx1, sy1, 2.2, 0.9, tilt);
     drawStampStar(doc, sx2, sy2, 2.2, 0.9, tilt);
     const [bx1, by1] = rotPt(cx - 11.1, cy - 4.5);
@@ -1251,31 +1252,41 @@ export default function Home() {
     }
     y += 8;
     // Bila halaman sudah terlalu penuh, pindah blok tanda tangan ke halaman baru.
-    if (y > 215) { doc.addPage(); y = 20; }
+    if (y > 200) { doc.addPage(); y = 20; }
     const sigTop = y;
     const place = cityFromAddress(settings.business_address);
     doc.text(`${place ? `${place}, ` : ""}${formatDateId(job.job_date)}`, 196, y, { align: "right" }); y += 8;
-    doc.text("Hormat kami,", 196, y, { align: "right" }); y += 6;
-    // Nama penandatangan (opsi di Pengaturan) bila diisi, kalau tidak nama usaha.
-    doc.text(settings.signer_name || businessName, 196, y, { align: "right" }); y += 40;
-    doc.text("( ___________________ )", 196, y, { align: "right" });
-    // Stempel otomatis di ruang kosong antara nama dan garis tanda tangan
-    // (bisa dimatikan / diganti warnanya di Pengaturan), sedikit miring
-    // seperti stempel tangan pada surat resmi.
+    doc.text("Hormat kami,", 196, y, { align: "right" });
+    // Stempel otomatis di ruang kosong di bawah "Hormat kami," (bisa
+    // dimatikan / diganti warnanya di Pengaturan), sedikit miring seperti
+    // stempel tangan pada surat resmi.
     const stampCy = sigTop + 34;
     if (settings.stamp_enabled !== 0) {
       drawStamp(doc, 158, stampCy, (settings.business_name || "Pencatat Laporan").toUpperCase(), stampCity(), remaining === 0 ? "LUNAS" : "DP", settings.stamp_color || "red", 12);
     }
     // Tanda tangan yang diunggah (PNG transparan) digambar menimpa stempel,
-    // seperti menandatangani di atas stempel pada surat resmi.
+    // seperti menandatangani di atas stempel pada surat resmi — dibuat lebar
+    // (55mm) supaya keluar dari stempel di kiri-kanan.
     if (settings.signature) {
       try {
         const props = doc.getImageProperties(settings.signature);
-        const sigW = 38;
+        let sigW = 55;
         let sigH = sigW * (props.height / props.width);
-        if (sigH > 16) sigH = 16;
+        if (sigH > 20) { const s = 20 / sigH; sigH = 20; sigW *= s; }
         doc.addImage(settings.signature, "PNG", 158 - sigW / 2, stampCy - sigH / 2, sigW, sigH);
       } catch { /* abaikan bila gambar rusak */ }
+    }
+    // Nama penandatangan di BAWAH tanda tangan, di kolom kosong — seperti
+    // surat resmi (nama tercetak di bawah tanda tangan), terpusat di bawah
+    // stempel. Bila tidak ada gambar tanda tangan, tampilkan garis untuk
+    // tanda tangan basah di atas nama.
+    // Nama penandatangan (opsi di Pengaturan) bila diisi, kalau tidak nama usaha.
+    const signerName = settings.signer_name || businessName;
+    if (settings.signature) {
+      doc.text(signerName, 158, sigTop + 58, { align: "center" });
+    } else {
+      doc.text("( ___________________ )", 158, sigTop + 54, { align: "center" });
+      doc.text(signerName, 158, sigTop + 62, { align: "center" });
     }
     return doc;
   };
