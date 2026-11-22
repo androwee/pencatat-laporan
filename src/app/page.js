@@ -141,6 +141,7 @@ export default function Home() {
   const [customerMonth, setCustomerMonth] = useState(null);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [monthPickerValue, setMonthPickerValue] = useState("");
+  const [showAboutModal, setShowAboutModal] = useState(false);
   // Modal pemilih bulan dipakai dua halaman: "dashboard" atau "customers".
   const [monthPickerTarget, setMonthPickerTarget] = useState("dashboard");
   const [customers, setCustomers] = useState([]);
@@ -1902,6 +1903,7 @@ export default function Home() {
         {installHelp && !installPrompt && (
           <p className="text-xs text-zinc-400 px-3 pb-2">Browser belum menawarkan install. Di Chrome Android: ketuk ⋮ lalu "Tambahkan ke Layar Utama" atau "Install aplikasi". Di iPhone: ketuk Bagikan lalu "Tambah ke Layar Utama".</p>
         )}
+        <button type="button" onClick={() => { setShowProfileMenu(false); setShowAboutModal(true); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Tentang</button>
         <button type="button" onClick={handleLogout} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm text-red-500 hover:bg-zinc-800">Keluar</button>
       </div>
     </>
@@ -2387,6 +2389,21 @@ export default function Home() {
                 <button type="button" onClick={() => { const m = todayWib().slice(0, 7); setDashMonth(m); setShowMonthPicker(false); loadDashboard(m); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Bulan ini</button>
               )}
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {showAboutModal && (
+        <Modal title="Tentang aplikasi" onClose={() => setShowAboutModal(false)}>
+          <div className="space-y-4 text-center">
+            <img src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"} alt="Logo Pencatat Laporan" className="w-20 h-20 mx-auto object-contain" />
+            <div>
+              <p className="font-black text-xl">Pencatat Laporan</p>
+              <p className="text-sm text-zinc-400 mt-0.5">Versi 1.0.0</p>
+            </div>
+            <p className="text-sm text-zinc-400 text-left">Catat pelanggan jasa, transaksi, dan pantau pemasukan harian serta bulanan — semua dalam satu tempat. Buat invoice dan kwitansi, kirim tagihan via WhatsApp, dan kelola beberapa usaha dalam satu akun.</p>
+            <a href="https://trakteer.id/andro_id3" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm">☕ Dukung pengembang di Trakteer</a>
+            <p className="text-xs text-zinc-500">© 2026 Pencatat Laporan</p>
           </div>
         </Modal>
       )}
