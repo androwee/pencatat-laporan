@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BarChart, DonutChart, HBarChart, fmtRp, groupByDate, statusParts, statusPill } from "../components/Charts";
+import { tr as trRaw, LANGS, DEFAULT_LANG, isSupportedLang } from "../i18n";
 
 const todayWib = () => {
   const d = new Date(Date.now() + 7 * 60 * 60 * 1000);
@@ -15,9 +16,9 @@ const prevMonthOf = (month) => {
 };
 
 // Label panjang "YYYY-MM" → "November 2026" (id-ID).
-const monthLabelOf = (month) => {
+const monthLabelOf = (month, lang) => {
   const [y, m] = month.split("-").map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+  return new Date(y, m - 1, 1).toLocaleDateString(lang === "en" ? "en-US" : "id-ID", { month: "long", year: "numeric" });
 };
 
 const BUSINESS_KEY = "pencatat-business";
@@ -47,7 +48,7 @@ async function api(path, options = {}) {
   if (scoped) url = path + (path.includes("?") ? "&" : "?") + "business_id=" + encodeURIComponent(bid);
   const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...options });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Gagal memuat ${path}`);
+  if (!res.ok) { const __lang = (typeof localStorage !== "undefined" && localStorage.getItem("pencatat-lang")) || "id"; throw new Error(data.error || trRaw(__lang, "loadFailed", { path })); }
   return data;
 }
 
@@ -85,14 +86,14 @@ const emptyCustomer = { id: "", name: "", address: "", phone: "", next_visit_dat
 const emptyJob = { id: "", customer_id: "", job_date: todayWib(), status: "lunas", note: "", paid_amount: "", payment_method: "transfer", bank_text: "" };
 const emptyJobItem = { service_type: "", qty: 1, unit: "kubik", unit_price: "" };
 
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, lang }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-label={title}>
-      <button aria-label="Tutup" onClick={onClose} className="absolute inset-0 bg-black/70" />
+      <button aria-label={trRaw(lang || "id", "close")} onClick={onClose} className="absolute inset-0 bg-black/70" />
       <div className="relative bg-panel border border-line rounded-t-3xl sm:rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl">
         <div className="flex justify-between items-start gap-3 mb-4">
           <h2 className="font-bold text-lg">{title}</h2>
-          <button onClick={onClose} aria-label="Tutup popup" className="bg-zinc-800 w-9 h-9 rounded-full font-bold shrink-0">×</button>
+          <button onClick={onClose} aria-label={trRaw(lang || "id", "closePopup")} className="bg-zinc-800 w-9 h-9 rounded-full font-bold shrink-0">×</button>
         </div>
         {children}
       </div>
@@ -164,6 +165,14 @@ export default function Home() {
   const [installHelp, setInstallHelp] = useState(false);
   const [theme, setTheme] = useState("dark");
   const [scheme, setScheme] = useState("blue");
+  // Bahasa antarmuka ("id" default, "en" Inggris). Disimpan di localStorage.
+  const [lang, setLang] = useState(DEFAULT_LANG);
+  const tr = useCallback((key, vars) => trRaw(lang, key, vars), [lang]);
+  const applyLang = useCallback((next) => {
+    const v = isSupportedLang(next) ? next : DEFAULT_LANG;
+    setLang(v);
+    try { localStorage.setItem("pencatat-lang", v); } catch {}
+  }, []);
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedJobs, setSelectedJobs] = useState([]);
   const [detailJob, setDetailJob] = useState(null);
@@ -234,7 +243,7 @@ export default function Home() {
           total_lunas: monthJobs.filter((j) => j.status === "lunas").reduce((s, j) => s + Number(j.amount), 0),
           total_dp: monthJobs.filter((j) => j.status === "dp").reduce((s, j) => s + Number(j.amount), 0),
           total_belum: monthJobs.filter((j) => j.status === "belum").reduce((s, j) => s + Number(j.amount), 0),
-        }),
+        }, lang),
       });
     } catch (e) { setError(e.message); }
   }, [dashMonth]);
@@ -349,7 +358,7 @@ export default function Home() {
         total_lunas: allJobs.filter((j) => j.status === "lunas").reduce((s, j) => s + Number(j.amount), 0),
         total_dp: allJobs.filter((j) => j.status === "dp").reduce((s, j) => s + Number(j.amount), 0),
         total_belum: allJobs.filter((j) => j.status === "belum").reduce((s, j) => s + Number(j.amount), 0),
-      }),
+      }, lang),
     });
   }, []);
 
@@ -367,7 +376,7 @@ export default function Home() {
   };
 
   const deletePrice = async (id) => {
-    if (!confirm("Hapus harga jasa ini? Transaksi lama tidak berubah.")) return;
+    if (!confirm(tr("deletePriceConfirm"))) return;
     try { await api(`/api/service-prices/${id}`, { method: "DELETE" }); loadServicePrices(); } catch (err) { setError(err.message); }
   };
 
@@ -439,6 +448,8 @@ export default function Home() {
       }
       const savedScheme = localStorage.getItem("pencatat-scheme");
       if (savedScheme && SCHEMES[savedScheme]) applyScheme(savedScheme);
+      const savedLang = localStorage.getItem("pencatat-lang");
+      if (isSupportedLang(savedLang)) setLang(savedLang);
     } catch {}
   }, []);
 
@@ -547,7 +558,7 @@ export default function Home() {
       a.download = `pencatat-laporan-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setBackupMessage(`Cadangan diunduh: ${backup.customers.length} pelanggan, ${backup.jobs.length} transaksi, ${backup.service_prices.length} harga jasa. Simpan file ini baik-baik.`);
+      setBackupMessage(tr("backupDownloaded", { customers: backup.customers.length, jobs: backup.jobs.length, prices: backup.service_prices.length }));
     } catch (err) { setError(err.message); }
   };
 
@@ -558,14 +569,14 @@ export default function Home() {
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      if (!parsed || !Array.isArray(parsed.customers) || !Array.isArray(parsed.jobs)) throw new Error("File ini bukan cadangan Pencatat Laporan.");
+      if (!parsed || !Array.isArray(parsed.customers) || !Array.isArray(parsed.jobs)) throw new Error(tr("notBackupFile"));
       setRestorePreview({ data: parsed, customers: parsed.customers.length, jobs: parsed.jobs.length, prices: Array.isArray(parsed.service_prices) ? parsed.service_prices.length : 0, exported_at: parsed.exported_at || null });
     } catch (err) { setRestorePreview({ error: err.message }); }
   };
 
   const doRestore = async () => {
     if (!restorePreview?.data) return;
-    const ok = window.confirm(`Restore akan MENGHAPUS seluruh data yang ada sekarang (${customers.length} pelanggan, ${jobs.length} transaksi) dan menggantinya dengan isi file cadangan (${restorePreview.customers} pelanggan, ${restorePreview.jobs} transaksi, ${restorePreview.prices} harga jasa). File cadangan di perangkatmu tidak ikut berubah. Lanjutkan?`);
+    const ok = window.confirm(tr("restoreConfirm", { customers: customers.length, jobs: jobs.length, rcustomers: restorePreview.customers, rjobs: restorePreview.jobs, rprices: restorePreview.prices }));
     if (!ok) return;
     setRestoreBusy(true);
     try {
@@ -573,7 +584,7 @@ export default function Home() {
       setRestoreFile(null);
       setRestorePreview(null);
       await Promise.all([loadDashboard(), loadCustomers(search), loadJobs(), loadSettings(), loadServicePrices()]);
-      setBackupMessage(`Restore selesai: ${res.restored_customers} pelanggan, ${res.restored_jobs} transaksi, ${res.restored_prices} harga jasa.`);
+      setBackupMessage(tr("restoreDone", { customers: res.restored_customers, jobs: res.restored_jobs, prices: res.restored_prices }));
     } catch (err) { setError(err.message); }
     finally { setRestoreBusy(false); }
   };
@@ -683,7 +694,7 @@ export default function Home() {
       let customerId = Number(jobForm.customer_id);
       // Mode pelanggan baru: simpan dulu ke list pelanggan, lalu pakai id-nya untuk transaksi.
       if (!id && jobCustomerMode === "new") {
-        if (!newCustomer.name.trim()) throw new Error("Nama pelanggan baru wajib diisi.");
+        if (!newCustomer.name.trim()) throw new Error(tr("newCustomerNameRequired"));
         if (!dupConfirmed.current) {
           const all = await api("/api/customers");
           const matches = findDuplicates(all.customers, newCustomer.name, newCustomer.phone, null);
@@ -707,11 +718,11 @@ export default function Home() {
         service_type: it.service_type.trim(), qty: Number(it.qty), unit: it.unit, unit_price: Number(it.unit_price),
       }));
       if (!items.length || items.some((it) => !it.service_type || !(it.qty > 0) || !(it.unit_price >= 0))) {
-        throw new Error("Isi tiap baris layanan: jenis jasa, jumlah > 0, dan harga satuan.");
+        throw new Error(tr("fillServiceRows"));
       }
       const paidAmount = Number(jobForm.paid_amount || 0);
       if (paidAmount < 0 || paidAmount > jobItemsTotal) {
-        throw new Error("Sudah dibayar tidak boleh melebihi total.");
+        throw new Error(tr("paidExceedsTotal"));
       }
       await api(id ? `/api/jobs/${id}` : "/api/jobs", {
         method: id ? "PUT" : "POST",
@@ -735,20 +746,20 @@ export default function Home() {
   };
 
   const deleteCustomer = async (id) => {
-    if (!confirm("Hapus pelanggan ini beserta semua transaksinya?")) return;
+    if (!confirm(tr("deleteCustomerConfirm"))) return;
     await api(`/api/customers/${id}`, { method: "DELETE" });
     loadCustomers(search);
   };
 
   const clearSchedule = async (customer) => {
-    if (!window.confirm(`Hapus jadwal kunjungan untuk ${customer.name}?`)) return;
+    if (!window.confirm(tr("deleteScheduleConfirm", { name: customer.name }))) return;
     try {
       await api(`/api/customers/${customer.id}`, { method: "PUT", body: JSON.stringify({ name: customer.name, address: customer.address, phone: customer.phone, next_visit_date: "" }) });
       await Promise.all([loadDashboard(), loadCustomers(search)]);
     } catch (err) { setError(err.message); }
   };
   const deleteJob = async (id) => {
-    if (!confirm("Hapus transaksi ini?")) return;
+    if (!confirm(tr("deleteJobConfirm"))) return;
     await api(`/api/jobs/${id}`, { method: "DELETE" });
     loadJobs();
   };
@@ -819,14 +830,14 @@ export default function Home() {
     loadJobs({ from: date, to: date, status: "" }); loadCustomers(); setTab("jobs");
   };
   const openJobsForStatus = (label) => {
-    const status = label === "Lunas" ? "lunas" : label === "DP" ? "dp" : "belum";
+    const status = label === tr("statusPaid") ? "lunas" : label === tr("statusDp") ? "dp" : "belum";
     setJobFilterType("all"); setJobFilterStatus(status);
     loadJobs({ from: "", to: "", status }); loadCustomers(); setTab("jobs");
   };
 
   const bulkDeleteCustomers = async () => {
     if (!selectedCustomers.length) return;
-    if (!confirm(`Hapus ${selectedCustomers.length} pelanggan beserta semua transaksinya? Tindakan ini tidak bisa dibatalkan.`)) return;
+    if (!confirm(tr("bulkDeleteCustomersConfirm", { count: selectedCustomers.length }))) return;
     try {
       await api("/api/customers/bulk-delete", { method: "POST", body: JSON.stringify({ ids: selectedCustomers }) });
       setSelectedCustomers([]);
@@ -838,7 +849,7 @@ export default function Home() {
 
   const bulkDeleteJobs = async () => {
     if (!selectedJobs.length) return;
-    if (!confirm(`Hapus ${selectedJobs.length} transaksi yang dipilih? Tindakan ini tidak bisa dibatalkan.`)) return;
+    if (!confirm(tr("bulkDeleteJobsConfirm", { count: selectedJobs.length }))) return;
     try {
       await api("/api/jobs/bulk-delete", { method: "POST", body: JSON.stringify({ ids: selectedJobs }) });
       setSelectedJobs([]);
@@ -871,8 +882,8 @@ export default function Home() {
   // tidak membebani database; PNG dipertahankan, JPEG dipakai bila lebih kecil.
   const handleLogoFile = (file) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) { setError("File logo harus berupa gambar."); return; }
-    if (file.size > 5 * 1024 * 1024) { setError("Ukuran file logo maksimal 5 MB."); return; }
+    if (!file.type.startsWith("image/")) { setError(tr("logoMustBeImage")); return; }
+    if (file.size > 5 * 1024 * 1024) { setError(tr("logoMaxSize")); return; }
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -897,10 +908,10 @@ export default function Home() {
         }
         setSettingsForm((prev) => ({ ...prev, business_logo: dataUrl }));
         setSettingsSaved("");
-      } catch { setError("Logo tidak bisa diproses."); }
+      } catch { setError(tr("logoProcessFail")); }
       URL.revokeObjectURL(url);
     };
-    img.onerror = () => { setError("Gambar logo tidak bisa dibaca."); URL.revokeObjectURL(url); };
+    img.onerror = () => { setError(tr("logoReadFail")); URL.revokeObjectURL(url); };
     img.src = url;
   };
 
@@ -909,8 +920,8 @@ export default function Home() {
   // latar putihnya akan menutupi stempel di kwitansi).
   const handleSignatureFile = (file) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) { setError("File tanda tangan harus berupa gambar."); return; }
-    if (file.size > 5 * 1024 * 1024) { setError("Ukuran file tanda tangan maksimal 5 MB."); return; }
+    if (!file.type.startsWith("image/")) { setError(tr("sigMustBeImage")); return; }
+    if (file.size > 5 * 1024 * 1024) { setError(tr("sigMaxSize")); return; }
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -925,10 +936,10 @@ export default function Home() {
         ctx.drawImage(img, 0, 0, w, h);
         setSettingsForm((prev) => ({ ...prev, signature: canvas.toDataURL("image/png") }));
         setSettingsSaved("");
-      } catch { setError("Tanda tangan tidak bisa diproses."); }
+      } catch { setError(tr("sigProcessFail")); }
       URL.revokeObjectURL(url);
     };
-    img.onerror = () => { setError("Gambar tanda tangan tidak bisa dibaca."); URL.revokeObjectURL(url); };
+    img.onerror = () => { setError(tr("sigReadFail")); URL.revokeObjectURL(url); };
     img.src = url;
   };
 
@@ -938,8 +949,8 @@ export default function Home() {
   // 48mm; 1024px membuat file PDF membengkak sampai ~5MB).
   const handleStampImageFile = (file) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) { setError("File stempel harus berupa gambar."); return; }
-    if (file.size > 5 * 1024 * 1024) { setError("Ukuran file stempel maksimal 5 MB."); return; }
+    if (!file.type.startsWith("image/")) { setError(tr("stampMustBeImage")); return; }
+    if (file.size > 5 * 1024 * 1024) { setError(tr("stampMaxSize")); return; }
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -954,10 +965,10 @@ export default function Home() {
         ctx.drawImage(img, 0, 0, w, h);
         setSettingsForm((prev) => ({ ...prev, stamp_image: canvas.toDataURL("image/png") }));
         setSettingsSaved("");
-      } catch { setError("Gambar stempel tidak bisa diproses."); }
+      } catch { setError(tr("stampProcessFail")); }
       URL.revokeObjectURL(url);
     };
-    img.onerror = () => { setError("Gambar stempel tidak bisa dibaca."); URL.revokeObjectURL(url); };
+    img.onerror = () => { setError(tr("stampReadFail")); URL.revokeObjectURL(url); };
     img.src = url;
   };
 
@@ -966,7 +977,7 @@ export default function Home() {
     try {
       const data = await api("/api/settings", { method: "PUT", body: JSON.stringify(settingsForm) });
       setSettings(data.settings || {});
-      setSettingsSaved("Informasi usaha tersimpan.");
+      setSettingsSaved(tr("savedMsg"));
     } catch (err) { setError(err.message); }
   };
 
@@ -1028,7 +1039,7 @@ export default function Home() {
     // 2. Fallback: chat wa.me langsung ke nomor pelanggan, pesan teks invoice.
     // wa.me memang tidak bisa melampirkan file, jadi ini hanya teks.
     if (!/^62\d{8,13}$/.test(phone)) {
-      setError("Berbagi file PDF tidak didukung browser ini, dan nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan, atau unduh PDF-nya lalu kirim manual dari WhatsApp.");
+      setError(tr("waShareFail"));
       return;
     }
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
@@ -1142,7 +1153,7 @@ export default function Home() {
     try {
       const doc = await buildInvoiceDoc(job);
       doc.save(`invoice-${job.id}-${job.job_date}.pdf`);
-    } catch (err) { setError(`Gagal membuat invoice: ${err.message}`); }
+    } catch (err) { setError(tr("invoiceCreateFail", { error: err.message })); }
   };
 
   // ---------- Kwitansi ----------
@@ -1355,7 +1366,7 @@ export default function Home() {
     try {
       const doc = await buildReceiptDoc(job);
       doc.save(`kwitansi-${job.id}-${job.job_date}.pdf`);
-    } catch (err) { setError(`Gagal membuat kwitansi: ${err.message}`); }
+    } catch (err) { setError(tr("receiptCreateFail", { error: err.message })); }
   };
 
   const sendReceiptWhatsApp = async (job) => {
@@ -1382,7 +1393,7 @@ export default function Home() {
     }
     // 2. Fallback: chat wa.me langsung ke nomor pelanggan, pesan teks kwitansi.
     if (!/^62\d{8,13}$/.test(phone)) {
-      setError("Berbagi file PDF tidak didukung browser ini, dan nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan, atau unduh PDF-nya lalu kirim manual dari WhatsApp.");
+      setError(tr("waShareFail"));
       return;
     }
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
@@ -1419,7 +1430,7 @@ export default function Home() {
       const doc = await buildInvoiceDoc(job);
       const url = doc.output("bloburl");
       window.open(url, "_blank", "noopener");
-    } catch (err) { setError(`Gagal membuka PDF: ${err.message}`); }
+    } catch (err) { setError(tr("pdfOpenFail", { error: err.message })); }
   };
 
   // ---------- Surat Penawaran Harga ----------
@@ -1604,7 +1615,7 @@ export default function Home() {
       const doc = await buildOfferDoc(offerForm);
       doc.save(offerFilename(offerForm));
       bumpOfferSeq();
-    } catch (err) { setError(`Gagal membuat surat penawaran: ${err.message}`); }
+    } catch (err) { setError(tr("offerCreateFail", { error: err.message })); }
   };
 
   const sendOfferWhatsApp = async () => {
@@ -1632,7 +1643,7 @@ export default function Home() {
       if (err?.name === "AbortError") return;
     }
     if (!/^62\d{8,13}$/.test(phone)) {
-      setError("Berbagi file PDF tidak didukung browser ini, dan nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan, atau unduh PDF-nya lalu kirim manual dari WhatsApp.");
+      setError(tr("waShareFail"));
       return;
     }
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
@@ -1645,7 +1656,7 @@ export default function Home() {
   const markJobPaid = async (job, after) => {
     const remaining = remainingOf(job);
     if (!remaining) return;
-    if (!confirm(`Tandai transaksi ini sebagai lunas? Sisa ${fmtRp(remaining)} akan dicatat sebagai sudah dibayar.`)) return;
+    if (!confirm(tr("markPaidConfirm", { amount: fmtRp(remaining) }))) return;
     try {
       const updated = await api(`/api/jobs/${job.id}`, {
         method: "PUT",
@@ -1703,10 +1714,10 @@ export default function Home() {
       else groups.later.push(c);
     });
     return [
-      { key: "overdue", title: "Terlewat", list: groups.overdue },
-      { key: "today", title: "Hari ini", list: groups.today },
-      { key: "week", title: "7 hari ke depan", list: groups.week },
-      { key: "later", title: "Mendatang", list: groups.later },
+      { key: "overdue", title: tr("scheduleOverdue"), list: groups.overdue },
+      { key: "today", title: tr("today"), list: groups.today },
+      { key: "week", title: tr("scheduleWeek"), list: groups.week },
+      { key: "later", title: tr("scheduleLater"), list: groups.later },
     ].filter((g) => g.list.length);
   })();
   // Pengingat dibuka sebagai chat wa.me dengan pesan sudah jadi — yang
@@ -1715,7 +1726,7 @@ export default function Home() {
     const customer = customers.find((c) => c.id === Number(group.customer_id)) || {};
     const phone = toWaNumber(customer.phone || group.phone);
     if (!/^62\d{8,13}$/.test(phone)) {
-      setError("Nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan.");
+      setError(tr("waInvalid"));
       return;
     }
     const businessName = settings.business_name || "Pencatat Laporan";
@@ -1747,7 +1758,7 @@ export default function Home() {
   const sendInactiveFollowUp = (c) => {
     const phone = toWaNumber(c.phone || "");
     if (!/^62\d{8,13}$/.test(phone)) {
-      setError("Nomor WA pelanggan belum diisi atau tidak valid. Lengkapi dulu di data pelanggan.");
+      setError(tr("waInvalid"));
       return;
     }
     const businessName = settings.business_name || "Pencatat Laporan";
@@ -1755,7 +1766,7 @@ export default function Home() {
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
   };
 
-  if (view === "loading") return <main className="max-w-3xl mx-auto p-6 text-zinc-400">Memuat…</main>;
+  if (view === "loading") return <main className="max-w-3xl mx-auto p-6 text-zinc-400">{tr("loading")}</main>;
 
   if (view === "login") {
     const fieldIcon = (d) => (
@@ -1765,8 +1776,8 @@ export default function Home() {
       <main className="min-h-screen flex flex-col px-4 pb-16">
         <div className="flex justify-end pt-4">
           <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
-            aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
-            title={theme === "dark" ? "Mode terang" : "Mode gelap"}
+            aria-label={theme === "dark" ? tr("toLightMode") : tr("toDarkMode")}
+            title={theme === "dark" ? tr("lightModeTitle") : tr("darkModeTitle")}
             className="bg-panel border border-line rounded-full p-2.5 text-zinc-400 hover-text-accent shadow">
             {theme === "dark"
               ? fieldIcon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
@@ -1777,8 +1788,8 @@ export default function Home() {
           <div className="w-full max-w-sm">
             <div className="flex flex-col items-center text-center gap-3">
               <AppLogo size={96} theme={theme} />
-              <h1 className="font-bold text-3xl tracking-tight">Login</h1>
-              <p className="text-zinc-400 -mt-1">Silakan masuk untuk melanjutkan.</p>
+              <h1 className="font-bold text-3xl tracking-tight">{tr("login")}</h1>
+              <p className="text-zinc-400 -mt-1">{tr("loginPrompt")}</p>
             </div>
             <div className="bg-panel border border-line rounded-[28px] p-6 mt-6 shadow-xl">
               {typeof window !== "undefined" && new URLSearchParams(window.location.search).get("auth_error") && (
@@ -1786,14 +1797,14 @@ export default function Home() {
               )}
               <a href="/api/auth/google" className="w-full bg-white text-black font-bold py-4 rounded-full flex items-center justify-center gap-2 text-base shadow transition-transform duration-150 active:scale-[0.97]">
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47a5.53 5.53 0 0 1-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z" /><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09A12 12 0 0 0 12 24z" /><path fill="#FBBC05" d="M5.27 14.29A7.2 7.2 0 0 1 4.89 12c0-.8.14-1.57.38-2.29V6.62H1.29a12 12 0 0 0 0 10.76l3.98-3.09z" /><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42A11.98 11.98 0 0 0 12 0 12 12 0 0 0 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z" /></svg>
-                Login dengan Google
+                {tr("loginGoogle")}
               </a>
-              <p className="text-zinc-400 text-xs text-center mt-4">Dengan masuk, kamu menyetujui <a href="/syarat/" className="text-zinc-300 font-medium underline underline-offset-2">Syarat Layanan</a> dan <a href="/privasi/" className="text-zinc-300 font-medium underline underline-offset-2">Kebijakan Privasi</a> Pencatat Laporan.</p>
+              <p className="text-zinc-400 text-xs text-center mt-4">{tr("agreePrefix")} <a href="/syarat/" className="text-zinc-300 font-medium underline underline-offset-2">{tr("termsOfService")}</a> {tr("andWord")} <a href="/privasi/" className="text-zinc-300 font-medium underline underline-offset-2">{tr("privacyPolicy")}</a> {tr("appName")}.</p>
             </div>
             <div className="text-center mt-6 space-y-1">
-              <p className="text-zinc-400 text-xs">Catat pelanggan, pantau pemasukan, dan kirim tagihan — semua dalam satu tempat.</p>
-              <p className="text-zinc-400 text-xs">Pencatat Laporan — Pencatat Pelanggan Jasa</p>
-              <p className="text-zinc-500 text-[11px]">© 2026 Pencatat Laporan</p>
+              <p className="text-zinc-400 text-xs">{tr("appTagline")}</p>
+              <p className="text-zinc-400 text-xs">{tr("appName")} — {tr("appSubtitle")}</p>
+              <p className="text-zinc-500 text-[11px]">© 2026 {tr("appName")}</p>
             </div>
           </div>
         </div>
@@ -1808,28 +1819,28 @@ export default function Home() {
           <div className="w-full max-w-sm">
             <div className="flex flex-col items-center text-center gap-3">
               <AppLogo size={96} theme={theme} />
-              <h1 className="font-bold text-3xl tracking-tight">Buat profil usaha</h1>
-              <p className="text-zinc-400 -mt-1">Akun Google kamu sudah terhubung. Isi nama usahamu untuk mulai mencatat pelanggan dan transaksi.</p>
+              <h1 className="font-bold text-3xl tracking-tight">{tr("createBusinessTitle")}</h1>
+              <p className="text-zinc-400 -mt-1">{tr("createBusinessDesc")}</p>
             </div>
             <div className="bg-panel border border-line rounded-[28px] p-6 mt-6 shadow-xl">
               <form onSubmit={submitBusiness} className="space-y-4">
                 <div>
-                  <label className="font-bold text-sm">Nama usaha *</label>
-                  <input className="mt-1" required placeholder="cth: Jasa Sedot WC Andro"
+                  <label className="font-bold text-sm">{tr("businessName")}</label>
+                  <input className="mt-1" required placeholder={tr("businessNamePh")}
                     value={businessForm.business_name} onChange={(e) => setBusinessForm({ ...businessForm, business_name: e.target.value })} />
                 </div>
                 <div>
-                  <label className="font-bold text-sm">Alamat</label>
+                  <label className="font-bold text-sm">{tr("businessAddress")}</label>
                   <input className="mt-1" value={businessForm.business_address} onChange={(e) => setBusinessForm({ ...businessForm, business_address: e.target.value })} />
                 </div>
                 <div>
-                  <label className="font-bold text-sm">No. telepon / WhatsApp</label>
+                  <label className="font-bold text-sm">{tr("businessPhone")}</label>
                   <input className="mt-1" inputMode="tel" value={businessForm.business_phone} onChange={(e) => setBusinessForm({ ...businessForm, business_phone: e.target.value })} />
                 </div>
                 {businessError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{businessError}</p>}
-                <button type="submit" className="w-full bg-accent hover-bg-accent-dark text-white font-bold py-3.5 rounded-full">Buat usaha</button>
+                <button type="submit" className="w-full bg-accent hover-bg-accent-dark text-white font-bold py-3.5 rounded-full">{tr("createBusiness")}</button>
               </form>
-              <button type="button" onClick={handleLogout} className="w-full text-center text-sm text-zinc-400 mt-4">Keluar</button>
+              <button type="button" onClick={handleLogout} className="w-full text-center text-sm text-zinc-400 mt-4">{tr("logout")}</button>
             </div>
           </div>
         </div>
@@ -1851,25 +1862,25 @@ export default function Home() {
 
   // Label bulan yang ditampilkan dashboard (bukan selalu bulan berjalan)
   // untuk chip di kartu ringkasan dashboard.
-  const monthLabel = monthLabelOf(dashMonth || todayWib().slice(0, 7));
-  const prevMonthLabel = monthLabelOf(prevMonthOf(dashMonth || todayWib().slice(0, 7)));
+  const monthLabel = monthLabelOf(dashMonth || todayWib().slice(0, 7), lang);
+  const prevMonthLabel = monthLabelOf(prevMonthOf(dashMonth || todayWib().slice(0, 7)), lang);
 
   // Pelanggan yang difilter bulan (halaman Pelanggan): hanya yang punya
   // transaksi di bulan terpilih. null = semua pelanggan (tanpa filter).
   const customersFiltered = customerMonth
     ? customers.filter((c) => jobs.some((j) => j.customer_id === c.id && String(j.job_date || "").slice(0, 7) === customerMonth))
     : customers;
-  const customerMonthLabel = customerMonth ? monthLabelOf(customerMonth) : "Semua bulan";
+  const customerMonthLabel = customerMonth ? monthLabelOf(customerMonth, lang) : tr("allMonths");
 
   // Banding bulan lalu: satu baris perbandingan pemasukan bulan ini vs
   // bulan lalu (persen + nominal bulan lalu). null bila belum ada data.
   const monthCompare = (() => {
     if (!dash) return null;
     const cur = dash.month, prev = dash.lastMonth || 0;
-    if (prev > 0 && cur > prev) return { text: `Naik ${Math.round(((cur - prev) / prev) * 100)}% dari ${prevMonthLabel} (${fmtRp(prev)})`, cls: "text-emerald-400" };
-    if (prev > 0 && cur < prev) return { text: `Turun ${Math.round(((prev - cur) / prev) * 100)}% dari ${prevMonthLabel} (${fmtRp(prev)})`, cls: "text-red-400" };
-    if (prev > 0) return { text: `Sama dengan ${prevMonthLabel} (${fmtRp(prev)})`, cls: "text-zinc-400" };
-    if (cur > 0) return { text: "Bulan lalu: Rp0", cls: "text-zinc-400" };
+    if (prev > 0 && cur > prev) return { text: tr("increaseFrom", { pct: Math.round(((cur - prev) / prev) * 100), month: prevMonthLabel, amount: fmtRp(prev) }), cls: "text-emerald-400" };
+    if (prev > 0 && cur < prev) return { text: tr("decreaseFrom", { pct: Math.round(((prev - cur) / prev) * 100), month: prevMonthLabel, amount: fmtRp(prev) }), cls: "text-red-400" };
+    if (prev > 0) return { text: tr("sameAs", { month: prevMonthLabel, amount: fmtRp(prev) }), cls: "text-zinc-400" };
+    if (cur > 0) return { text: tr("lastMonthZero"), cls: "text-zinc-400" };
     return null;
   })();
 
@@ -1877,34 +1888,34 @@ export default function Home() {
   // mengikuti sisi avatar yang membukanya (kiri di header Moni).
   const profileMenu = (side) => showProfileMenu && (
     <>
-      <button aria-label="Tutup menu profil" onClick={() => { setInstallHelp(false); setShowProfileMenu(false); }} className="fixed inset-0 z-40 cursor-default" />
+      <button aria-label={tr("closeMenu")} onClick={() => { setInstallHelp(false); setShowProfileMenu(false); }} className="fixed inset-0 z-40 cursor-default" />
       <div className={`absolute ${side === "left" ? "left-0" : "right-0"} top-full mt-2 w-56 bg-panel border border-line rounded-2xl shadow-2xl p-2 z-50 profile-menu`}>
-        <p className="text-xs text-zinc-400 px-3 py-2">Login sebagai {username}</p>
-        {activeBusiness && <p className="text-xs text-zinc-400 px-3 pb-1">Usaha: <span className="font-bold">{activeBusiness.name}</span></p>}
+        <p className="text-xs text-zinc-400 px-3 py-2">{tr("loginAs", { email: username })}</p>
+        {activeBusiness && <p className="text-xs text-zinc-400 px-3 pb-1">{tr("business", { name: "" })}<span className="font-bold">{activeBusiness.name}</span></p>}
         {businesses.length > 1 && businesses.map((b) => (
           <button key={b.id} type="button" onClick={() => switchBusiness(b.id)} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">{b.id === activeBusiness?.id ? "✓ " : ""}{b.name}</button>
         ))}
         {businesses.length > 1 && <div className="border-t border-line my-1" />}
         {authKind === "google" && (
-          <button type="button" onClick={() => { setShowProfileMenu(false); setBusinessForm({ business_name: "", business_address: "", business_phone: "", business_website: "", bank_name: "", bank_account_number: "", bank_account_holder: "" }); setBusinessError(""); setShowBusinessModal(true); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">+ Tambah usaha</button>
+          <button type="button" onClick={() => { setShowProfileMenu(false); setBusinessForm({ business_name: "", business_address: "", business_phone: "", business_website: "", bank_name: "", bank_account_number: "", bank_account_holder: "" }); setBusinessError(""); setShowBusinessModal(true); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">{tr("addBusiness")}</button>
         )}
         {authKind === "password" && (
-          <a href="/api/auth/google?mode=link" className="block w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Hubungkan akun Google</a>
+          <a href="/api/auth/google?mode=link" className="block w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">{tr("connectGoogle")}</a>
         )}
-        <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("profil"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Profil</button>
-        <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("pengaturan"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Pengaturan</button>
+        <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("profil"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">{tr("profile")}</button>
+        <button type="button" onClick={() => { setShowProfileMenu(false); openSettings("pengaturan"); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">{tr("settings")}</button>
         <div className="border-t border-line my-1" />
         <button type="button" disabled={isInstalled}
           onClick={() => {
             if (installPrompt) { setShowProfileMenu(false); setInstallHelp(false); installApp(); }
             else setInstallHelp(true);
           }}
-          className={`w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm ${isInstalled ? "text-zinc-500 opacity-40" : "hover:bg-zinc-800"}`}>Install aplikasi</button>
+          className={`w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm ${isInstalled ? "text-zinc-500 opacity-40" : "hover:bg-zinc-800"}`}>{tr("installApp")}</button>
         {installHelp && !installPrompt && (
-          <p className="text-xs text-zinc-400 px-3 pb-2">Browser belum menawarkan install. Di Chrome Android: ketuk ⋮ lalu "Tambahkan ke Layar Utama" atau "Install aplikasi". Di iPhone: ketuk Bagikan lalu "Tambah ke Layar Utama".</p>
+          <p className="text-xs text-zinc-400 px-3 pb-2">{tr("installHelp")}</p>
         )}
-        <button type="button" onClick={() => { setShowProfileMenu(false); setShowAboutModal(true); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">Tentang</button>
-        <button type="button" onClick={handleLogout} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm text-red-500 hover:bg-zinc-800">Keluar</button>
+        <button type="button" onClick={() => { setShowProfileMenu(false); setShowAboutModal(true); }} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800">{tr("about")}</button>
+        <button type="button" onClick={handleLogout} className="w-full text-left px-3 py-2.5 rounded-xl font-bold text-sm text-red-500 hover:bg-zinc-800">{tr("logout")}</button>
       </div>
     </>
   );
@@ -1914,10 +1925,10 @@ export default function Home() {
         <header className="w-full text-white rounded-b-[28px]" style={{ background: "linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%)" }}>
           <div className="max-w-5xl mx-auto px-4 flex items-center gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-20">
             <div className="relative shrink-0">
-              <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label="Menu profil" aria-expanded={showProfileMenu}
+              <button onClick={() => { setInstallHelp(false); setShowProfileMenu((v) => !v); }} aria-label={tr("profileMenuAria")} aria-expanded={showProfileMenu}
                 className="w-11 h-11 rounded-full overflow-hidden border-2 border-white/60 bg-white/15 flex items-center justify-center">
                 {settings.business_logo ? (
-                  <img src={settings.business_logo} alt="Logo perusahaan" className="w-full h-full object-cover" />
+                  <img src={settings.business_logo} alt={tr("companyLogoAlt")} className="w-full h-full object-cover" />
                 ) : (
                   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-white">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
@@ -1927,19 +1938,19 @@ export default function Home() {
               {profileMenu("left")}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] leading-tight">Selamat datang,</p>
+              <p className="text-[13px] leading-tight">{tr("welcome")}</p>
               <h1 className="font-bold text-[15px] leading-tight line-clamp-2">{activeBusiness?.name || settings.business_name || username}</h1>
             </div>
             <div className="flex items-center shrink-0">
               <button type="button" onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
-                aria-label={theme === "dark" ? "Pindah ke mode terang" : "Pindah ke mode gelap"}
-                title={theme === "dark" ? "Mode terang" : "Mode gelap"}
+                aria-label={theme === "dark" ? tr("toLightMode") : tr("toDarkMode")}
+                title={theme === "dark" ? tr("lightModeTitle") : tr("darkModeTitle")}
                 className="w-11 h-11 rounded-full hover:bg-white/15 flex items-center justify-center">
                 {theme === "dark"
                   ? icon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>)
                   : icon(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)}
               </button>
-              <button type="button" onClick={() => openSettings("pengaturan")} aria-label="Pengaturan" title="Pengaturan"
+              <button type="button" onClick={() => openSettings("pengaturan")} aria-label={tr("settings")} title={tr("settings")}
                 className="w-11 h-11 rounded-full hover:bg-white/15 flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <circle cx="12" cy="12" r="3" />
@@ -1961,8 +1972,8 @@ export default function Home() {
             Sapaan sudah pindah ke header biru di atas. */}
           <section className="relative -mt-20 -mx-4 bg-panel border border-line rounded-t-[28px] p-5 sm:p-6 shadow">
             <div className="flex items-start justify-between gap-3">
-              <p className="text-sm text-zinc-400">Pemasukan bulan ini</p>
-              <button type="button" onClick={() => { setMonthPickerTarget("dashboard"); setMonthPickerValue(dashMonth || todayWib().slice(0, 7)); setShowMonthPicker(true); }} aria-label="Pilih bulan dashboard" className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-1.5 rounded-full shrink-0 active:scale-[0.97]">
+              <p className="text-sm text-zinc-400">{tr("monthIncome")}</p>
+              <button type="button" onClick={() => { setMonthPickerTarget("dashboard"); setMonthPickerValue(dashMonth || todayWib().slice(0, 7)); setShowMonthPicker(true); }} aria-label={tr("chooseMonthDashboard")} className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-1.5 rounded-full shrink-0 active:scale-[0.97]">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
                 {monthLabel}
               </button>
@@ -1971,35 +1982,35 @@ export default function Home() {
             {monthCompare && <p className={`text-xs font-bold mt-1 ${monthCompare.cls}`}>{monthCompare.text}</p>}
             <div className="flex gap-8 mt-5 pt-4 border-t border-line">
               <div>
-                <p className="text-xs text-zinc-400">Hari ini</p>
+                <p className="text-xs text-zinc-400">{tr("today")}</p>
                 <p className="font-bold text-lg leading-tight dash-num">{fmtRp(dash.today)}</p>
               </div>
               <div>
-                <p className="text-xs text-zinc-400">Piutang</p>
+                <p className="text-xs text-zinc-400">{tr("outstanding")}</p>
                 <p className="font-bold text-lg leading-tight dash-num">{fmtRp(dash.outstanding)}</p>
               </div>
             </div>
             <div className="flex gap-8 mt-5 pt-4 border-t border-line">
               <div>
-                <p className="text-xs text-zinc-400">Total pelanggan</p>
+                <p className="text-xs text-zinc-400">{tr("totalCustomers")}</p>
                 <p className="font-bold text-lg leading-tight dash-num">{dash.customers}</p>
               </div>
               <div>
-                <p className="text-xs text-zinc-400">Total transaksi</p>
+                <p className="text-xs text-zinc-400">{tr("totalJobs")}</p>
                 <p className="font-bold text-lg leading-tight dash-num">{dash.jobs}</p>
               </div>
             </div>
           </section>
           {dash.outstanding > 0 && (
             <div className="bg-orange-500/10 border border-orange-500/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
-              <span className="font-bold">Total piutang: {fmtRp(dash.outstanding)}</span>
-              <span className="text-sm text-zinc-400">{dash.outstandingCount} transaksi belum lunas</span>
-              <button onClick={openPiutang} className="bg-accent px-4 py-2 rounded-xl font-bold text-sm">Lihat piutang</button>
+              <span className="font-bold">{tr("totalOutstanding", { amount: fmtRp(dash.outstanding) })}</span>
+              <span className="text-sm text-zinc-400">{tr("outstandingCount", { count: dash.outstandingCount })}</span>
+              <button onClick={openPiutang} className="bg-accent px-4 py-2 rounded-xl font-bold text-sm">{tr("viewPiutang")}</button>
             </div>
           )}
           {(dash?.schedules || []).length > 0 && (
             <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
-              <h3 className="font-bold">Jadwal kunjungan berikutnya</h3>
+              <h3 className="font-bold">{tr("scheduleTitle")}</h3>
               {scheduleGroups.map((g) => (
                 <div key={g.key}>
                   <div className="text-sm text-zinc-400 mb-1">{g.title}</div>
@@ -2010,80 +2021,80 @@ export default function Home() {
                           <button onClick={() => openHistory(c)} className="font-bold underline-offset-2 hover:underline text-left">{c.name}</button>
                           <div className="text-zinc-400">{c.next_visit_date}{c.phone ? ` · ${c.phone}` : ""}</div>
                         </div>
-                        <button onClick={() => clearSchedule(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">Selesai</button>
+                        <button onClick={() => clearSchedule(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">{tr("scheduleDone")}</button>
                       </div>
                     ))}
                   </div>
                 </div>
               ))}
-              <p className="text-xs text-zinc-400">Ketuk nama pelanggan untuk melihat riwayatnya. Atur atau ubah jadwal dari Pelanggan → Edit.</p>
+              <p className="text-xs text-zinc-400">{tr("scheduleHint")}</p>
             </div>
           )}
           <div className="grid md:grid-cols-2 gap-4">
-            <Card title="Tren pemasukan (10 tanggal terakhir)"><BarChart labels={dash.trendDates} values={dash.trendValues} onSelect={(date) => openJobsForDate(date)} /></Card>
-            <Card title="Pemasukan per status (semua transaksi)"><DonutChart parts={dash.status} onSelect={(part) => openJobsForStatus(part.label)} /></Card>
+            <Card title={tr("trendTitle")}><BarChart labels={dash.trendDates} values={dash.trendValues} lang={lang} onSelect={(date) => openJobsForDate(date)} /></Card>
+            <Card title={tr("statusTitle")}><DonutChart parts={dash.status} onSelect={(part) => openJobsForStatus(part.label)} lang={lang} /></Card>
           </div>
-          <p className="text-xs text-zinc-400">Ketuk batang grafik atau potongan donat untuk melihat transaksinya, dan ketuk kotak transaksi untuk melihat detailnya.</p>
+          <p className="text-xs text-zinc-400">{tr("chartHint")}</p>
           {inactiveCustomers.length > 0 && (
             <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
-              <h3 className="font-bold">Pelanggan lama tidak aktif</h3>
-              <p className="text-xs text-zinc-400">Tidak ada transaksi dalam 90 hari terakhir — coba sapa kembali.</p>
+              <h3 className="font-bold">{tr("inactiveTitle")}</h3>
+              <p className="text-xs text-zinc-400">{tr("inactiveHintLong")}</p>
               {inactiveCustomers.map((c) => (
                 <div key={c.id} className="flex justify-between gap-2 text-sm border border-line rounded-xl p-3">
                   <div className="min-w-0">
                     <button onClick={() => openHistory(c)} className="font-bold underline-offset-2 hover:underline text-left">{c.name}</button>
-                    <div className="text-zinc-400">{c.lastJob ? `Terakhir transaksi: ${c.lastJob}` : "Belum pernah transaksi"}{c.phone ? ` · ${c.phone}` : ""}</div>
+                    <div className="text-zinc-400">{c.lastJob ? tr("lastTxFull", { date: c.lastJob }) : tr("neverTx")}{c.phone ? ` · ${c.phone}` : ""}</div>
                   </div>
-                  <button onClick={() => sendInactiveFollowUp(c)} className="bg-[#25d366] hover:opacity-90 px-3 py-1.5 rounded-lg text-sm font-bold text-white shrink-0 self-start">Sapa via WA</button>
+                  <button onClick={() => sendInactiveFollowUp(c)} className="bg-[#25d366] hover:opacity-90 px-3 py-1.5 rounded-lg text-sm font-bold text-white shrink-0 self-start">{tr("greetWa")}</button>
                 </div>
               ))}
             </div>
           )}
           {selectedJobs.length > 0 && (
             <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
-              <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
-              <button onClick={bulkDeleteJobs} className="bg-accent hover-bg-accent-dark px-4 py-2 rounded-xl font-bold text-sm">Hapus yang dipilih</button>
-              <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
+              <span className="text-sm text-zinc-400">{tr("selectedCount", { count: selectedJobs.length })}</span>
+              <button onClick={bulkDeleteJobs} className="bg-accent hover-bg-accent-dark px-4 py-2 rounded-xl font-bold text-sm">{tr("deleteSelected")}</button>
+              <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">{tr("cancelSelection")}</button>
             </div>
           )}
           <section className="bg-panel border border-line rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between gap-3 p-4 pb-0">
-              <h2 className="font-bold">Transaksi Terbaru</h2>
-              <button onClick={() => showTab("jobs")} className="text-accent font-bold text-sm shrink-0">Lihat Semua</button>
+              <h2 className="font-bold">{tr("recentJobs")}</h2>
+              <button onClick={() => showTab("jobs")} className="text-accent font-bold text-sm shrink-0">{tr("viewAll")}</button>
             </div>
-            <p className="text-xs text-zinc-400 px-4 pt-1">Tahan lama pada transaksi untuk memilih.</p>
+            <p className="text-xs text-zinc-400 px-4 pt-1">{tr("longPressJob")}</p>
             <div className="sm:hidden p-4 pt-2 space-y-3">
               {dash.recent.map((j) => (
                 <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
                   className={`border rounded-2xl p-3 select-none flex items-center gap-3 ${selectedJobs.includes(j.id) ? "border-accent bg-accent-soft" : "border-line"}`}>
                   <input type="checkbox" className="w-4 h-4 accent-[var(--accent)] shrink-0" style={{ width: "auto" }}
-                    checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} />
+                    checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={tr("selectJobAria", { service: j.service_type })} />
                   <span className="w-11 h-11 rounded-full bg-accent-soft text-accent font-black flex items-center justify-center shrink-0">{(j.customer_name || "?").charAt(0).toUpperCase()}</span>
                   <span className="min-w-0 flex-1">
                     <strong className="block truncate">{j.customer_name}</strong>
                     <span className="block text-zinc-400 text-sm truncate">{j.service_type} · {j.job_date}</span>
-                    {remainingOf(j) > 0 && <span className="block text-sm font-bold text-orange-400">Sisa: {fmtRp(remainingOf(j))}</span>}
+                    {remainingOf(j) > 0 && <span className="block text-sm font-bold text-orange-400">{tr("remaining", { amount: fmtRp(remainingOf(j)) })}</span>}
                   </span>
                   <span className="text-right shrink-0">
                     <span className="block font-bold">{fmtRp(j.amount)}</span>
-                    {statusPill(j.status)}
+                    {statusPill(j.status, lang)}
                   </span>
                 </div>
               ))}
-              {!dash.recent.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
+              {!dash.recent.length && <p className="text-zinc-400 text-sm">{tr("noJobs")}</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto p-4 pt-2">
               <table className="w-full text-sm min-w-[560px]">
-                <thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">Tanggal</th><th className="py-2 pr-3">Pelanggan</th><th className="py-2 pr-3">Jasa</th><th className="py-2 pr-3">Nominal</th><th className="py-2">Status</th></tr></thead>
+                <thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">{tr("tableDate")}</th><th className="py-2 pr-3">{tr("tableCustomer")}</th><th className="py-2 pr-3">{tr("tableService")}</th><th className="py-2 pr-3">{tr("tableAmount")}</th><th className="py-2">{tr("tableStatus")}</th></tr></thead>
                 <tbody>
                   {dash.recent.map((j) => (
                     <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
                       className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-accent-soft" : ""}`}>
                       <td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td>
-                      <td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status)}</td>
+                      <td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status, lang)}</td>
                     </tr>
                   ))}
-                  {!dash.recent.length && <tr><td colSpan="5" className="py-4 text-zinc-400">Belum ada transaksi.</td></tr>}
+                  {!dash.recent.length && <tr><td colSpan="5" className="py-4 text-zinc-400">{tr("noJobs")}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -2094,33 +2105,33 @@ export default function Home() {
       {tab === "customers" && (
         <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="flex justify-between items-center gap-3">
-            <h2 className="font-bold text-lg">Pelanggan</h2>
+            <h2 className="font-bold text-lg">{tr("customers")}</h2>
             <div className="flex items-center gap-2 shrink-0">
-              <button type="button" onClick={() => { setMonthPickerTarget("customers"); setMonthPickerValue(customerMonth || dashMonth || todayWib().slice(0, 7)); setShowMonthPicker(true); }} aria-label="Pilih bulan pelanggan" className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-2 rounded-full active:scale-[0.97]">
+              <button type="button" onClick={() => { setMonthPickerTarget("customers"); setMonthPickerValue(customerMonth || dashMonth || todayWib().slice(0, 7)); setShowMonthPicker(true); }} aria-label={tr("chooseMonthCustomer")} className="inline-flex items-center gap-1.5 bg-accent-soft text-accent text-xs font-bold px-3 py-2 rounded-full active:scale-[0.97]">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
                 {customerMonthLabel}
               </button>
-              <button onClick={() => openCustomerModal(null)} className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Pelanggan</button>
+              <button onClick={() => openCustomerModal(null)} className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">{tr("addCustomer")}</button>
             </div>
           </div>
-          <label className="block text-sm font-medium">Cari pelanggan
-            <input className="mt-1" placeholder="Nama atau nomor WA…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <label className="block text-sm font-medium">{tr("searchCustomer")}
+            <input className="mt-1" placeholder={tr("searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)} />
           </label>
           <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
               <input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }}
                 checked={customersFiltered.length > 0 && selectedCustomers.length === customersFiltered.length}
                 onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customersFiltered)} />
-              Pilih semua ({customersFiltered.length})
+              {tr("selectAll", { count: customersFiltered.length })}
             </label>
-            <span className="text-sm text-zinc-400">{selectedCustomers.length} dipilih</span>
+            <span className="text-sm text-zinc-400">{tr("selectedCount", { count: selectedCustomers.length })}</span>
             <button onClick={bulkDeleteCustomers} disabled={!selectedCustomers.length}
-              className="bg-accent hover-bg-accent-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">Hapus yang dipilih</button>
+              className="bg-accent hover-bg-accent-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">{tr("deleteSelected")}</button>
             {selectedCustomers.length > 0 && (
-              <button onClick={() => setSelectedCustomers([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
+              <button onClick={() => setSelectedCustomers([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">{tr("cancelSelection")}</button>
             )}
           </div>
-          <p className="text-xs text-zinc-400">Tahan lama pada pelanggan untuk memilih.</p>
+          <p className="text-xs text-zinc-400">{tr("longPressCustomer")}</p>
           <div className="bg-panel border border-line rounded-2xl overflow-y-auto max-h-[75vh]">
             <div className="sm:hidden p-4 space-y-3">
               {customersFiltered.map((c) => (
@@ -2128,34 +2139,34 @@ export default function Home() {
                   className={`border rounded-xl p-3 select-none ${selectedCustomers.includes(c.id) ? "border-accent bg-accent-soft" : "border-line"}`}>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="w-4 h-4 accent-[var(--accent)] mt-1 shrink-0" style={{ width: "auto" }}
-                      checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} />
+                      checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={tr("selectCustomerAria", { name: c.name })} />
                     <strong>{c.name}</strong>
                   </div>
                   <div className="text-zinc-400 text-sm mt-1">{c.address || "—"}</div>
                   <div className="text-sm mt-1">{c.phone || "—"}</div>
-                  {c.next_visit_date && <div className={`text-sm mt-1 ${c.next_visit_date <= todayWib() ? "text-orange-400" : "text-zinc-400"}`}>Jadwal berikutnya: {c.next_visit_date}</div>}
+                  {c.next_visit_date && <div className={`text-sm mt-1 ${c.next_visit_date <= todayWib() ? "text-orange-400" : "text-zinc-400"}`}>{tr("nextVisit", { date: c.next_visit_date })}</div>}
                   <div className="flex gap-2 mt-3">
-                    <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Riwayat</button>
-                    <button onClick={() => openCustomerModal(c)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
-                    <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
+                    <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("history")}</button>
+                    <button onClick={() => openCustomerModal(c)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold">{tr("edit")}</button>
+                    <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("delete")}</button>
                   </div>
                 </div>
               ))}
-              {!customersFiltered.length && <p className="text-zinc-400 text-sm">{customerMonth ? `Belum ada pelanggan dengan transaksi di ${customerMonthLabel}.` : "Belum ada pelanggan."}</p>}
+              {!customersFiltered.length && <p className="text-zinc-400 text-sm">{customerMonth ? tr("noCustomersMonth", { month: customerMonthLabel }) : tr("noCustomers")}</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={customersFiltered.length > 0 && selectedCustomers.length === customersFiltered.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customersFiltered)} aria-label="Pilih semua pelanggan" /></th><th className="p-3">Nama</th><th className="p-3">Alamat</th><th className="p-3">Telepon / WA</th><th className="p-3">Jadwal berikutnya</th><th className="p-3"></th></tr></thead>
+            <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={customersFiltered.length > 0 && selectedCustomers.length === customersFiltered.length} onChange={() => toggleSelectAll(selectedCustomers, setSelectedCustomers, customersFiltered)} aria-label={tr("selectAllCustomers")} /></th><th className="p-3">{tr("namePlain")}</th><th className="p-3">{tr("addressLabel")}</th><th className="p-3">{tr("detailPhone")}</th><th className="p-3">{tr("nextVisitShort")}</th><th className="p-3"></th></tr></thead>
               <tbody>{customersFiltered.map((c) => (
                 <tr key={c.id} {...lpProps(() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id))} onClick={cardClickToggle(selectedCustomers, setSelectedCustomers, c.id)}
                   className={`border-t border-line select-none ${selectedCustomers.includes(c.id) ? "bg-accent-soft" : ""}`}>
-                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={`Pilih ${c.name}`} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td><td className={`p-3 ${c.next_visit_date && c.next_visit_date <= todayWib() ? "text-orange-400" : ""}`}>{c.next_visit_date || "—"}</td>
+                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={selectedCustomers.includes(c.id)} onChange={() => toggleSelect(selectedCustomers, setSelectedCustomers, c.id)} aria-label={tr("selectCustomerAria", { name: c.name })} /></td><td className="p-3">{c.name}</td><td className="p-3">{c.address}</td><td className="p-3">{c.phone}</td><td className={`p-3 ${c.next_visit_date && c.next_visit_date <= todayWib() ? "text-orange-400" : ""}`}>{c.next_visit_date || "—"}</td>
                   <td className="p-3 whitespace-nowrap">
-                    <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Riwayat</button>
-                    <button onClick={() => openCustomerModal(c)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
-                    <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
+                    <button onClick={() => openHistory(c)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">{tr("history")}</button>
+                    <button onClick={() => openCustomerModal(c)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold mr-2">{tr("edit")}</button>
+                    <button onClick={() => deleteCustomer(c.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("delete")}</button>
                   </td>
                 </tr>))}
-                {!customers.length && <tr><td colSpan="4" className="p-4 text-zinc-400">Belum ada pelanggan.</td></tr>}
+                {!customers.length && <tr><td colSpan="4" className="p-4 text-zinc-400">{tr("noCustomers")}</td></tr>}
               </tbody></table>
           </div></div>
         </div>
@@ -2164,96 +2175,96 @@ export default function Home() {
       {tab === "jobs" && (
         <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="flex justify-between items-center gap-3">
-            <h2 className="font-bold text-lg">Transaksi</h2>
-            <button onClick={() => openJobModal(null)} className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">+ Tambah Transaksi</button>
+            <h2 className="font-bold text-lg">{tr("jobs")}</h2>
+            <button onClick={() => openJobModal(null)} className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-full font-bold text-sm shrink-0">{tr("addJobBtn")}</button>
           </div>
           <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
-            <h3 className="font-bold">Filter transaksi</h3>
+            <h3 className="font-bold">{tr("filterTitle")}</h3>
             <div className="flex flex-wrap gap-3 items-end">
-              <label className="block text-sm font-medium flex-1 min-w-[140px]">Periode
+              <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("period")}
                 <select className="mt-1" value={jobFilterType} onChange={(e) => setJobFilterType(e.target.value)}>
-                  <option value="all">Semua</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option><option value="custom">Custom</option>
+                  <option value="all">{tr("periodAll")}</option><option value="weekly">{tr("periodWeekly")}</option><option value="monthly">{tr("periodMonthly")}</option><option value="custom">{tr("periodCustom")}</option>
                 </select>
               </label>
               {jobFilterType === "weekly" && (
-                <label className="block text-sm font-medium flex-1 min-w-[140px]">Minggu
+                <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("week")}
                   <input className="mt-1" type="week" value={jobFilterWeek} onChange={(e) => setJobFilterWeek(e.target.value)} />
                 </label>
               )}
               {jobFilterType === "monthly" && (
-                <label className="block text-sm font-medium flex-1 min-w-[140px]">Bulan
+                <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("month")}
                   <input className="mt-1" type="month" value={jobFilterMonth} onChange={(e) => setJobFilterMonth(e.target.value)} />
                 </label>
               )}
               {jobFilterType === "custom" && (
                 <>
-                  <label className="block text-sm font-medium flex-1 min-w-[140px]">Dari<input className="mt-1" type="date" value={jobFilterFrom} onChange={(e) => setJobFilterFrom(e.target.value)} /></label>
-                  <label className="block text-sm font-medium flex-1 min-w-[140px]">Sampai<input className="mt-1" type="date" value={jobFilterTo} onChange={(e) => setJobFilterTo(e.target.value)} /></label>
+                  <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("from")}<input className="mt-1" type="date" value={jobFilterFrom} onChange={(e) => setJobFilterFrom(e.target.value)} /></label>
+                  <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("to")}<input className="mt-1" type="date" value={jobFilterTo} onChange={(e) => setJobFilterTo(e.target.value)} /></label>
                 </>
               )}
-              <label className="block text-sm font-medium flex-1 min-w-[140px]">Status
+              <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("status")}
                 <select className="mt-1" value={jobFilterStatus} onChange={(e) => setJobFilterStatus(e.target.value)}>
-                  <option value="">Semua status</option><option value="lunas">Lunas</option><option value="dp">DP</option><option value="belum">Belum bayar</option>
+                  <option value="">{tr("statusAll")}</option><option value="lunas">{tr("statusPaid")}</option><option value="dp">{tr("statusDp")}</option><option value="belum">{tr("statusUnpaid")}</option>
                 </select>
               </label>
             </div>
             <div className="flex gap-2 flex-wrap items-center">
-              <button onClick={() => loadJobs()} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">Terapkan filter</button>
-              <button onClick={() => { setJobFilterType("all"); setJobFilterStatus(""); loadJobs({ from: "", to: "", status: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Reset</button>
-              <span className="text-sm text-zinc-400">{jobs.length} transaksi · total {fmtRp(jobs.reduce((sum, j) => sum + Number(j.amount), 0))}</span>
+              <button onClick={() => loadJobs()} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">{tr("applyFilter")}</button>
+              <button onClick={() => { setJobFilterType("all"); setJobFilterStatus(""); loadJobs({ from: "", to: "", status: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">{tr("reset")}</button>
+              <span className="text-sm text-zinc-400">{tr("jobsSummary", { count: jobs.length, amount: fmtRp(jobs.reduce((sum, j) => sum + Number(j.amount), 0)) })}</span>
             </div>
-            {jobFilterType !== "all" && (() => { const r = jobFilterRange(); return r.from ? <p className="text-sm text-zinc-400">Periode: {r.from} sampai {r.to}</p> : null; })()}
+            {jobFilterType !== "all" && (() => { const r = jobFilterRange(); return r.from ? <p className="text-sm text-zinc-400">{tr("periodRange", { from: r.from, to: r.to })}</p> : null; })()}
           </div>
           <div className="bg-panel border border-line rounded-2xl p-3 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
               <input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }}
                 checked={jobs.length > 0 && selectedJobs.length === jobs.length}
                 onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} />
-              Pilih semua ({jobs.length})
+              {tr("selectAll", { count: jobs.length })}
             </label>
-            <span className="text-sm text-zinc-400">{selectedJobs.length} dipilih</span>
+            <span className="text-sm text-zinc-400">{tr("selectedCount", { count: selectedJobs.length })}</span>
             <button onClick={bulkDeleteJobs} disabled={!selectedJobs.length}
-              className="bg-accent hover-bg-accent-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">Hapus yang dipilih</button>
+              className="bg-accent hover-bg-accent-dark px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40">{tr("deleteSelected")}</button>
             {selectedJobs.length > 0 && (
-              <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">Batalkan pilihan</button>
+              <button onClick={() => setSelectedJobs([])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">{tr("cancelSelection")}</button>
             )}
           </div>
-          <p className="text-xs text-zinc-400">Tahan lama pada transaksi untuk memilih.</p>
+          <p className="text-xs text-zinc-400">{tr("longPressJob")}</p>
           <div className="bg-panel border border-line rounded-2xl overflow-y-auto max-h-[75vh]">
             <div className="sm:hidden p-4 space-y-3">
               {jobs.map((j) => (
                 <div key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
                   className={`border rounded-xl p-3 select-none ${selectedJobs.includes(j.id) ? "border-accent bg-accent-soft" : "border-line"}`}>
-                  <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
+                  <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status, lang)}</div>
                   <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                   <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
-                  {remainingOf(j) > 0 && <div className="text-sm font-bold text-orange-400 mt-1">Sisa: {fmtRp(remainingOf(j))}</div>}
+                  {remainingOf(j) > 0 && <div className="text-sm font-bold text-orange-400 mt-1">{tr("remaining", { amount: fmtRp(remainingOf(j)) })}</div>}
                   {j.note && <div className="text-zinc-400 text-sm mt-1">{j.note}</div>}
                   <div className="flex gap-2 mt-3 flex-wrap">
-                    <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Detail</button>
-                    <button onClick={() => duplicateJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Ulangi</button>
-                    <button onClick={() => openJobModal(j)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
-                    <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
+                    <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("detail")}</button>
+                    <button onClick={() => duplicateJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("repeat")}</button>
+                    <button onClick={() => openJobModal(j)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold">{tr("edit")}</button>
+                    <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("delete")}</button>
                   </div>
                 </div>
               ))}
-              {!jobs.length && <p className="text-zinc-400 text-sm">Belum ada transaksi.</p>}
+              {!jobs.length && <p className="text-zinc-400 text-sm">{tr("noJobs")}</p>}
             </div>
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={jobs.length > 0 && selectedJobs.length === jobs.length} onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} aria-label="Pilih semua transaksi" /></th><th className="p-3">Tanggal</th><th className="p-3">Pelanggan</th><th className="p-3">Jasa</th><th className="p-3">Nominal</th><th className="p-3">Status</th><th className="p-3"></th></tr></thead>
+            <table className="w-full text-sm min-w-[600px]"><thead><tr className="text-left text-zinc-400"><th className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={jobs.length > 0 && selectedJobs.length === jobs.length} onChange={() => toggleSelectAll(selectedJobs, setSelectedJobs, jobs)} aria-label={tr("selectAllJobs")} /></th><th className="p-3">{tr("tableDate")}</th><th className="p-3">{tr("tableCustomer")}</th><th className="p-3">{tr("tableService")}</th><th className="p-3">{tr("tableAmount")}</th><th className="p-3">{tr("tableStatus")}</th><th className="p-3"></th></tr></thead>
               <tbody>{jobs.map((j) => (
                 <tr key={j.id} {...lpProps(() => toggleSelect(selectedJobs, setSelectedJobs, j.id))} onClick={cardClickJob(j)}
                   className={`border-t border-line select-none ${selectedJobs.includes(j.id) ? "bg-accent-soft" : ""}`}>
-                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={`Pilih transaksi ${j.service_type}`} /></td><td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
-                  <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status)}</td>
+                  <td className="p-3"><input type="checkbox" className="w-4 h-4 accent-[var(--accent)]" style={{ width: "auto" }} checked={selectedJobs.includes(j.id)} onChange={() => toggleSelect(selectedJobs, setSelectedJobs, j.id)} aria-label={tr("selectJobAria", { service: j.service_type })} /></td><td className="p-3">{j.job_date}</td><td className="p-3">{j.customer_name}</td><td className="p-3">{j.service_type}</td>
+                  <td className="p-3">{fmtRp(j.amount)}</td><td className="p-3">{statusPill(j.status, lang)}</td>
                   <td className="p-3 whitespace-nowrap">
-                    <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Detail</button>
-                    <button onClick={() => duplicateJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Ulangi</button>
-                    <button onClick={() => openJobModal(j)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold mr-2">Edit</button>
-                    <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
+                    <button onClick={() => setDetailJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">{tr("detail")}</button>
+                    <button onClick={() => duplicateJob(j)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mr-2">{tr("repeat")}</button>
+                    <button onClick={() => openJobModal(j)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold mr-2">{tr("edit")}</button>
+                    <button onClick={() => deleteJob(j.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("delete")}</button>
                   </td>
                 </tr>))}
-                {!jobs.length && <tr><td colSpan="6" className="p-4 text-zinc-400">Belum ada transaksi.</td></tr>}
+                {!jobs.length && <tr><td colSpan="6" className="p-4 text-zinc-400">{tr("noJobs")}</td></tr>}
               </tbody></table>
           </div></div>
         </div>
@@ -2262,17 +2273,17 @@ export default function Home() {
       {tab === "piutang" && (
         <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="flex justify-between items-center gap-3">
-            <h2 className="font-bold text-lg">Piutang</h2>
-            <button onClick={() => showTab("dashboard")} className="bg-zinc-800 px-4 py-2.5 rounded-full font-bold text-sm shrink-0">← Kembali</button>
+            <h2 className="font-bold text-lg">{tr("piutang")}</h2>
+            <button onClick={() => showTab("dashboard")} className="bg-zinc-800 px-4 py-2.5 rounded-full font-bold text-sm shrink-0">← {tr("back")}</button>
           </div>
           {!(settings.bank_name && settings.bank_account_number) && (
-            <p className="text-xs text-zinc-400">Isi rekening di Profil & Pengaturan agar pengingat WhatsApp menyertakan info pembayaran.</p>
+            <p className="text-xs text-zinc-400">{tr("bankHint")}</p>
           )}
           <div className="bg-panel border border-line rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2">
-            <span className="font-bold">Total piutang: {fmtRp(piutangGroups.reduce((s, g) => s + g.totalRemaining, 0))}</span>
-            <span className="text-sm text-zinc-400">{piutangGroups.reduce((s, g) => s + g.jobs.length, 0)} transaksi · {piutangGroups.length} pelanggan</span>
+            <span className="font-bold">{tr("totalOutstanding", { amount: fmtRp(piutangGroups.reduce((s, g) => s + g.totalRemaining, 0)) })}</span>
+            <span className="text-sm text-zinc-400">{tr("piutangSummary", { txCount: piutangGroups.reduce((s, g) => s + g.jobs.length, 0), custCount: piutangGroups.length })}</span>
           </div>
-          {!piutangGroups.length && <p className="text-zinc-400 text-sm">Tidak ada piutang. Semua transaksi sudah lunas.</p>}
+          {!piutangGroups.length && <p className="text-zinc-400 text-sm">{tr("noPiutang")}</p>}
           {piutangGroups.map((g) => (
             <div key={g.customer_id} className="bg-panel border border-line rounded-2xl p-4 space-y-3">
               <div className="flex justify-between gap-2">
@@ -2281,7 +2292,7 @@ export default function Home() {
                   {g.phone && <div className="text-zinc-400 text-sm">{g.phone}</div>}
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="text-zinc-400 text-xs">Total sisa</div>
+                  <div className="text-zinc-400 text-xs">{tr("totalRemaining")}</div>
                   <strong className="text-orange-400">{fmtRp(g.totalRemaining)}</strong>
                 </div>
               </div>
@@ -2290,16 +2301,16 @@ export default function Home() {
                   <div key={j.id} className="flex justify-between gap-2 text-sm border border-line rounded-xl p-3">
                     <div>
                       <div><strong>{j.service_type}</strong><span className="text-zinc-400"> · {j.job_date}</span></div>
-                      <div className="text-zinc-400">Total {fmtRp(j.amount)} · Sudah dibayar {fmtRp(paidOf(j))}</div>
+                      <div className="text-zinc-400">{tr("piutangJobLine", { total: fmtRp(j.amount), paid: fmtRp(paidOf(j)) })}</div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="font-bold text-orange-400">Sisa {fmtRp(remainingOf(j))}</div>
-                      <button onClick={() => markJobPaid(j, () => { loadJobs({ from: "", to: "", status: "" }); loadDashboard(); })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mt-1">Tandai lunas</button>
+                      <div className="font-bold text-orange-400">{tr("remainingPart", { amount: fmtRp(remainingOf(j)) })}</div>
+                      <button onClick={() => markJobPaid(j, () => { loadJobs({ from: "", to: "", status: "" }); loadDashboard(); })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold mt-1">{tr("markPaid")}</button>
                     </div>
                   </div>
                 ))}
               </div>
-              <button onClick={() => sendPiutangReminder(g)} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-white text-sm">Ingatkan via WhatsApp</button>
+              <button onClick={() => sendPiutangReminder(g)} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-white text-sm">{tr("remindWa")}</button>
             </div>
           ))}
         </div>
@@ -2308,65 +2319,65 @@ export default function Home() {
       {tab === "reports" && (
         <div className="relative -mt-20 -mx-4 rounded-t-[28px] sheet-bg px-4 pt-5 pb-5 space-y-5">
           <div className="bg-panel border border-line rounded-2xl p-4 space-y-3">
-            <h2 className="font-bold">Laporan pemasukan</h2>
+            <h2 className="font-bold">{tr("reportTitle")}</h2>
             <div className="flex flex-wrap gap-3 items-end">
-              <label className="block text-sm font-medium flex-1 min-w-[140px]">Periode
+              <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("period")}
                 <select className="mt-1" value={reportPeriod} onChange={(e) => setReportPeriod(e.target.value)}>
-                  <option value="daily">Harian</option><option value="monthly">Bulanan</option><option value="range">Rentang tanggal</option>
+                  <option value="daily">{tr("periodDaily")}</option><option value="monthly">{tr("periodMonthly")}</option><option value="range">{tr("periodRangeLabel")}</option>
                 </select>
               </label>
               {reportPeriod === "daily" && (
-                <label className="block text-sm font-medium flex-1 min-w-[140px]">Tanggal<input className="mt-1" type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} /></label>
+                <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("tableDate")}<input className="mt-1" type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} /></label>
               )}
               {reportPeriod === "monthly" && (
-                <label className="block text-sm font-medium flex-1 min-w-[140px]">Bulan<input className="mt-1" type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} /></label>
+                <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("month")}<input className="mt-1" type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} /></label>
               )}
               {reportPeriod === "range" && (
                 <>
-                  <label className="block text-sm font-medium flex-1 min-w-[140px]">Dari<input className="mt-1" type="date" value={reportFrom} onChange={(e) => setReportFrom(e.target.value)} /></label>
-                  <label className="block text-sm font-medium flex-1 min-w-[140px]">Sampai<input className="mt-1" type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)} /></label>
+                  <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("from")}<input className="mt-1" type="date" value={reportFrom} onChange={(e) => setReportFrom(e.target.value)} /></label>
+                  <label className="block text-sm font-medium flex-1 min-w-[140px]">{tr("to")}<input className="mt-1" type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)} /></label>
                 </>
               )}
             </div>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={loadReport} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">Tampilkan laporan</button>
-              <button onClick={async () => { const d = await loadReport(); if (d) window.location.href = `/api/export?from=${d.from}&to=${d.to}`; }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Ekspor CSV</button>
+              <button onClick={loadReport} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">{tr("showReport")}</button>
+              <button onClick={async () => { const d = await loadReport(); if (d) window.location.href = `/api/export?from=${d.from}&to=${d.to}`; }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">{tr("exportCsv")}</button>
             </div>
           </div>
           {report && (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <Stat label="Total periode" value={fmtRp(report.totals.total)} />
-                <Stat label="Lunas" value={fmtRp(report.totals.total_lunas)} />
-                <Stat label="DP" value={fmtRp(report.totals.total_dp)} />
-                <Stat label="Belum bayar" value={fmtRp(report.totals.total_belum)} />
+                <Stat label={tr("totalPeriod")} value={fmtRp(report.totals.total)} />
+                <Stat label={tr("statusPaid")} value={fmtRp(report.totals.total_lunas)} />
+                <Stat label={tr("statusDp")} value={fmtRp(report.totals.total_dp)} />
+                <Stat label={tr("statusUnpaid")} value={fmtRp(report.totals.total_belum)} />
               </div>
               <div className="grid md:grid-cols-2 gap-4">
-                <Card title="Pemasukan per tanggal"><BarChart labels={reportTrend.dates} values={reportTrend.values} /></Card>
-                <Card title="Per status pembayaran"><DonutChart parts={statusParts(report.totals)} /></Card>
-                <Card title="Pemasukan per jenis jasa" wide><HBarChart rows={report.by_service} /></Card>
+                <Card title={tr("incomeByDate")}><BarChart labels={reportTrend.dates} values={reportTrend.values} lang={lang} /></Card>
+                <Card title={tr("statusPayment")}><DonutChart parts={statusParts(report.totals, lang)} lang={lang} /></Card>
+                <Card title={tr("incomeByService")} wide><HBarChart rows={report.by_service} lang={lang} /></Card>
               </div>
-              <div className="bg-panel border border-line rounded-2xl overflow-hidden"><h3 className="font-bold p-4 pb-0">Per jenis jasa</h3><div className="overflow-x-auto p-4 pt-2">
-                <table className="w-full text-sm"><thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">Jenis jasa</th><th className="py-2 pr-3">Jumlah</th><th className="py-2">Total</th></tr></thead>
+              <div className="bg-panel border border-line rounded-2xl overflow-hidden"><h3 className="font-bold p-4 pb-0">{tr("byServiceType")}</h3><div className="overflow-x-auto p-4 pt-2">
+                <table className="w-full text-sm"><thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">{tr("serviceType")}</th><th className="py-2 pr-3">{tr("countLabel")}</th><th className="py-2">{tr("totalLabel")}</th></tr></thead>
                   <tbody>{report.by_service.map((r) => <tr key={r.service_type} className="border-t border-line"><td className="py-2 pr-3">{r.service_type}</td><td className="py-2 pr-3">{r.count}</td><td className="py-2">{fmtRp(r.total)}</td></tr>)}
-                    {!report.by_service.length && <tr><td colSpan="3" className="py-4 text-zinc-400">Belum ada data.</td></tr>}
+                    {!report.by_service.length && <tr><td colSpan="3" className="py-4 text-zinc-400">{tr("noData")}</td></tr>}
                   </tbody></table>
               </div></div>
-              <div className="bg-panel border border-line rounded-2xl overflow-y-auto max-h-[75vh]"><h3 className="font-bold p-4 pb-0">Detail transaksi</h3>
+              <div className="bg-panel border border-line rounded-2xl overflow-y-auto max-h-[75vh]"><h3 className="font-bold p-4 pb-0">{tr("detailTx")}</h3>
                 <div className="sm:hidden p-4 pt-2 space-y-3">
                   {report.jobs.map((j) => (
                     <div key={j.id} className="border border-line rounded-xl p-3">
-                      <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status)}</div>
+                      <div className="flex justify-between gap-2"><strong>{j.customer_name}</strong>{statusPill(j.status, lang)}</div>
                       <div className="text-zinc-400 text-sm mt-1">{j.service_type} · {j.job_date}</div>
                       <div className="font-bold mt-1">{fmtRp(j.amount)}</div>
                     </div>
                   ))}
-                  {!report.jobs.length && <p className="text-zinc-400 text-sm">Belum ada data.</p>}
+                  {!report.jobs.length && <p className="text-zinc-400 text-sm">{tr("noData")}</p>}
                 </div>
                 <div className="hidden sm:block overflow-x-auto p-4 pt-2">
-                <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">Tanggal</th><th className="py-2 pr-3">Pelanggan</th><th className="py-2 pr-3">Jasa</th><th className="py-2 pr-3">Nominal</th><th className="py-2">Status</th></tr></thead>
-                  <tbody>{report.jobs.map((j) => <tr key={j.id} className="border-t border-line"><td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td><td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status)}</td></tr>)}
-                    {!report.jobs.length && <tr><td colSpan="5" className="py-4 text-zinc-400">Belum ada data.</td></tr>}
+                <table className="w-full text-sm min-w-[560px]"><thead><tr className="text-left text-zinc-400"><th className="py-2 pr-3">{tr("tableDate")}</th><th className="py-2 pr-3">{tr("tableCustomer")}</th><th className="py-2 pr-3">{tr("tableService")}</th><th className="py-2 pr-3">{tr("tableAmount")}</th><th className="py-2">{tr("tableStatus")}</th></tr></thead>
+                  <tbody>{report.jobs.map((j) => <tr key={j.id} className="border-t border-line"><td className="py-2 pr-3">{j.job_date}</td><td className="py-2 pr-3">{j.customer_name}</td><td className="py-2 pr-3">{j.service_type}</td><td className="py-2 pr-3">{fmtRp(j.amount)}</td><td className="py-2">{statusPill(j.status, lang)}</td></tr>)}
+                    {!report.jobs.length && <tr><td colSpan="5" className="py-4 text-zinc-400">{tr("noData")}</td></tr>}
                   </tbody></table>
               </div></div>
             </>
@@ -2375,18 +2386,18 @@ export default function Home() {
       )}
 
       {showMonthPicker && (
-        <Modal title={monthPickerTarget === "customers" ? "Pilih bulan pelanggan" : "Pilih bulan dashboard"} onClose={() => setShowMonthPicker(false)}>
+        <Modal lang={lang} title={monthPickerTarget === "customers" ? tr("chooseMonthCustomer") : tr("chooseMonthDashboard")} onClose={() => setShowMonthPicker(false)}>
           <div className="space-y-3">
-            <p className="text-sm text-zinc-400">{monthPickerTarget === "customers" ? "Halaman Pelanggan menampilkan hanya pelanggan yang punya transaksi di bulan yang dipilih." : "Dashboard menampilkan pemasukan, tren, status, dan transaksi terbaru untuk bulan yang dipilih. Hari ini, Piutang, Total pelanggan, dan Total transaksi tetap angka hari ini / sepanjang waktu."}</p>
-            <label className="block text-sm font-medium">Bulan
+            <p className="text-sm text-zinc-400">{monthPickerTarget === "customers" ? tr("customerMonthHint") : tr("dashboardMonthHint")}</p>
+            <label className="block text-sm font-medium">{tr("monthLabel")}
               <input type="month" className="mt-1" value={monthPickerValue} onChange={(e) => setMonthPickerValue(e.target.value)} />
             </label>
             <div className="flex gap-2 flex-wrap pt-1">
-              <button type="button" onClick={() => { const m = monthPickerValue || todayWib().slice(0, 7); if (monthPickerTarget === "customers") { setCustomerMonth(m); if (!jobs.length) loadJobs(); } else { setDashMonth(m); loadDashboard(m); } setShowMonthPicker(false); }} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">Tampilkan</button>
+              <button type="button" onClick={() => { const m = monthPickerValue || todayWib().slice(0, 7); if (monthPickerTarget === "customers") { setCustomerMonth(m); if (!jobs.length) loadJobs(); } else { setDashMonth(m); loadDashboard(m); } setShowMonthPicker(false); }} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">{tr("show")}</button>
               {monthPickerTarget === "customers" ? (
-                <button type="button" onClick={() => { setCustomerMonth(null); setShowMonthPicker(false); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Semua pelanggan</button>
+                <button type="button" onClick={() => { setCustomerMonth(null); setShowMonthPicker(false); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">{tr("allCustomers")}</button>
               ) : (
-                <button type="button" onClick={() => { const m = todayWib().slice(0, 7); setDashMonth(m); setShowMonthPicker(false); loadDashboard(m); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Bulan ini</button>
+                <button type="button" onClick={() => { const m = todayWib().slice(0, 7); setDashMonth(m); setShowMonthPicker(false); loadDashboard(m); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">{tr("thisMonth")}</button>
               )}
             </div>
           </div>
@@ -2394,73 +2405,73 @@ export default function Home() {
       )}
 
       {showAboutModal && (
-        <Modal title="Tentang aplikasi" onClose={() => setShowAboutModal(false)}>
+        <Modal lang={lang} title={tr("aboutTitle")} onClose={() => setShowAboutModal(false)}>
           <div className="space-y-4 text-center">
             <img src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"} alt="Logo Pencatat Laporan" className="w-20 h-20 mx-auto object-contain" />
             <div>
               <p className="font-black text-xl">Pencatat Laporan</p>
-              <p className="text-sm text-zinc-400 mt-0.5">Versi 1.0.0</p>
+              <p className="text-sm text-zinc-400 mt-0.5">{tr("version", { version: "1.0.0" })}</p>
             </div>
-            <p className="text-sm text-zinc-400 text-left">Catat pelanggan jasa, transaksi, dan pantau pemasukan harian serta bulanan — semua dalam satu tempat. Buat invoice dan kwitansi, kirim tagihan via WhatsApp, dan kelola beberapa usaha dalam satu akun.</p>
+            <p className="text-sm text-zinc-400 text-left">{tr("aboutDesc")}</p>
             <div className="space-y-2">
-              <a href="https://github.com/androwee/pencatat-laporan" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 bg-zinc-800 px-5 py-2.5 rounded-xl font-bold text-sm">Kode sumber di GitHub</a>
+              <a href="https://github.com/androwee/pencatat-laporan" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 bg-zinc-800 px-5 py-2.5 rounded-xl font-bold text-sm">{tr("githubSource")}</a>
               <a href="https://trakteer.id/andro_id3" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm">☕ Buy me a coffee</a>
             </div>
-            <p className="text-xs text-zinc-500">© 2026 Pencatat Laporan</p>
+            <p className="text-xs text-zinc-500">© 2026 {tr("appName")}</p>
           </div>
         </Modal>
       )}
 
       {showCustomerModal && (
-        <Modal title={customerForm.id ? "Edit pelanggan" : "Tambah pelanggan"} onClose={() => { setShowCustomerModal(false); setCustomerForm(emptyCustomer); }}>
+        <Modal lang={lang} title={customerForm.id ? tr("editCustomer") : tr("customerModalAdd")} onClose={() => { setShowCustomerModal(false); setCustomerForm(emptyCustomer); }}>
           <form onSubmit={submitCustomer} className="space-y-3">
-            <label className="block text-sm font-medium">Nama *
+            <label className="block text-sm font-medium">{tr("nameLabel")}
               <input className="mt-1" required value={customerForm.name} onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })} />
             </label>
-            <label className="block text-sm font-medium">Alamat
+            <label className="block text-sm font-medium">{tr("addressLabel")}
               <input className="mt-1" value={customerForm.address} onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })} />
             </label>
-            <label className="block text-sm font-medium">Nomor telepon / WA
+            <label className="block text-sm font-medium">{tr("phoneLabel")}
               <input className="mt-1" inputMode="tel" value={customerForm.phone} onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })} />
             </label>
-            <label className="block text-sm font-medium">Jadwal kunjungan berikutnya (opsional)
+            <label className="block text-sm font-medium">{tr("nextVisitLabel")}
               <input className="mt-1" type="date" value={customerForm.next_visit_date} onChange={(e) => setCustomerForm({ ...customerForm, next_visit_date: e.target.value })} />
             </label>
             <div className="flex gap-2 flex-wrap pt-1">
-              <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan pelanggan</button>
-              <button type="button" onClick={() => { setShowCustomerModal(false); setCustomerForm(emptyCustomer); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
+              <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">{tr("saveCustomer")}</button>
+              <button type="button" onClick={() => { setShowCustomerModal(false); setCustomerForm(emptyCustomer); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">{tr("cancel")}</button>
             </div>
           </form>
         </Modal>
       )}
 
       {showJobModal && (
-        <Modal title={jobForm.id ? "Edit transaksi" : "Tambah transaksi"} onClose={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobItems([{ ...emptyJobItem }]); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }}>
+        <Modal lang={lang} title={jobForm.id ? tr("editJob") : tr("addJob")} onClose={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobItems([{ ...emptyJobItem }]); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }}>
           <form onSubmit={submitJob} className="space-y-3">
             {!jobForm.id && (
-              <div className="flex gap-2" role="group" aria-label="Pilih pelanggan">
+              <div className="flex gap-2" role="group" aria-label={tr("chooseCustomerAria")}>
                 <button type="button" onClick={() => setJobCustomerMode("existing")}
-                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "existing" ? "bg-accent text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan lama</button>
+                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "existing" ? "bg-accent text-white" : "bg-zinc-800 text-zinc-300"}`}>{tr("existingCustomer")}</button>
                 <button type="button" onClick={() => setJobCustomerMode("new")}
-                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "new" ? "bg-accent text-white" : "bg-zinc-800 text-zinc-300"}`}>Pelanggan baru</button>
+                  className={`flex-1 py-2.5 rounded-xl font-bold text-sm ${jobCustomerMode === "new" ? "bg-accent text-white" : "bg-zinc-800 text-zinc-300"}`}>{tr("newCustomer")}</button>
               </div>
             )}
             {jobCustomerMode === "new" && !jobForm.id ? (
               <>
-                <label className="block text-sm font-medium">Nama pelanggan baru *
-                  <input className="mt-1" required value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })} placeholder="Otomatis tersimpan ke list pelanggan" />
+                <label className="block text-sm font-medium">{tr("newCustomerName")}
+                  <input className="mt-1" required value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })} placeholder={tr("newCustomerNamePh")} />
                 </label>
-                <label className="block text-sm font-medium">Alamat pelanggan baru
+                <label className="block text-sm font-medium">{tr("newCustomerAddress")}
                   <input className="mt-1" value={newCustomer.address} onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })} />
                 </label>
-                <label className="block text-sm font-medium">Nomor telepon / WA pelanggan baru
+                <label className="block text-sm font-medium">{tr("newCustomerPhone")}
                   <input className="mt-1" inputMode="tel" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} />
                 </label>
               </>
             ) : (
-              <label className="block text-sm font-medium">Pelanggan *
+              <label className="block text-sm font-medium">{tr("customerLabel")}
                 <select className="mt-1" required value={jobForm.customer_id} onChange={(e) => setJobForm({ ...jobForm, customer_id: e.target.value })}>
-                  <option value="">-- pilih pelanggan --</option>
+                  <option value="">{tr("chooseCustomerPh")}</option>
                   {customers.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
                 </select>
               </label>
@@ -2472,12 +2483,12 @@ export default function Home() {
                   .filter((s) => !servicePrices.some((p) => p.service_type.toLowerCase() === s.toLowerCase()))
                   .map((s) => <option key={s} value={s} />)}
               </datalist>
-              <p className="text-sm font-medium mb-2">Layanan * <span className="text-zinc-400 font-normal">— satu transaksi bisa berisi beberapa layanan, tiap baris dihitung dari jumlah × harga satuan</span></p>
+              <p className="text-sm font-medium mb-2">{tr("servicesLabel")} <span className="text-zinc-400 font-normal">{tr("servicesHint")}</span></p>
               <div className="space-y-3">
                 {jobItems.map((it, idx) => (
                   <div key={idx} className="border border-line rounded-xl p-3 space-y-2">
-                    <label className="block text-sm font-medium">Jenis jasa *
-                      <input className="mt-1" required list="jasa-list" placeholder="cth: Sedot WC, Perbaikan Wastafel, Lain-lain" value={it.service_type}
+                    <label className="block text-sm font-medium">{tr("serviceTypeLabel")}
+                      <input className="mt-1" required list="jasa-list" placeholder={tr("serviceTypePh")} value={it.service_type}
                         onChange={(e) => {
                           const value = e.target.value;
                           const preset = servicePrices.find((p) => p.service_type.toLowerCase() === value.trim().toLowerCase());
@@ -2487,55 +2498,55 @@ export default function Home() {
                         }} />
                     </label>
                     <div className="grid grid-cols-3 gap-2">
-                      <label className="block text-sm font-medium">Jumlah *
+                      <label className="block text-sm font-medium">{tr("qtyLabel")}
                         <input className="mt-1" type="number" min="0" step="any" required value={it.qty}
                           onChange={(e) => setJobItems(jobItems.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))} />
                       </label>
-                      <label className="block text-sm font-medium">Satuan *
+                      <label className="block text-sm font-medium">{tr("unitStar")}
                         <select className="mt-1" value={it.unit}
                           onChange={(e) => setJobItems(jobItems.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x))}>
                           <option value="kubik">kubik</option><option value="strip">strip</option><option value="pcs">pcs</option><option value="paket">paket</option>
                         </select>
                       </label>
-                      <label className="block text-sm font-medium">Harga satuan (Rp) *
+                      <label className="block text-sm font-medium">{tr("unitPriceLabel")}
                         <input className="mt-1" type="number" min="0" step="1" required value={it.unit_price}
                           onChange={(e) => setJobItems(jobItems.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x))} />
                       </label>
                     </div>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-zinc-400">Subtotal: <strong className="text-white">{fmtRp(Math.round(Number(it.qty || 0) * Number(it.unit_price || 0)))}</strong></span>
+                      <span className="text-sm text-zinc-400">{tr("subtotalLabel")}: <strong className="text-white">{fmtRp(Math.round(Number(it.qty || 0) * Number(it.unit_price || 0)))}</strong></span>
                       {jobItems.length > 1 && (
-                        <button type="button" onClick={() => setJobItems(jobItems.filter((_, i) => i !== idx))} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus baris</button>
+                        <button type="button" onClick={() => setJobItems(jobItems.filter((_, i) => i !== idx))} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("deleteRow")}</button>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
               <div className="flex items-center justify-between gap-2 mt-3">
-                <button type="button" onClick={() => setJobItems([...jobItems, { ...emptyJobItem }])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">+ Tambah layanan</button>
-                <span className="font-bold">Total: {fmtRp(jobItemsTotal)}</span>
+                <button type="button" onClick={() => setJobItems([...jobItems, { ...emptyJobItem }])} className="bg-zinc-800 px-4 py-2 rounded-xl font-bold text-sm">{tr("addService")}</button>
+                <span className="font-bold">{tr("totalLine", { amount: fmtRp(jobItemsTotal) })}</span>
               </div>
             </div>
-            <label className="block text-sm font-medium">Tanggal *
+            <label className="block text-sm font-medium">{tr("dateLabel")}
               <input className="mt-1" type="date" required value={jobForm.job_date} onChange={(e) => setJobForm({ ...jobForm, job_date: e.target.value })} />
             </label>
-            <label className="block text-sm font-medium">Status
+            <label className="block text-sm font-medium">{tr("status")}
               <select className="mt-1" value={jobForm.status} onChange={(e) => setJobForm({ ...jobForm, status: e.target.value })}>
-                <option value="lunas">Lunas</option><option value="dp">DP</option><option value="belum">Belum bayar</option>
+                <option value="lunas">{tr("statusPaid")}</option><option value="dp">{tr("statusDp")}</option><option value="belum">{tr("statusUnpaid")}</option>
               </select>
             </label>
-            <label className="block text-sm font-medium">Cara bayar
+            <label className="block text-sm font-medium">{tr("payMethodLabel")}
               <select className="mt-1" value={jobForm.payment_method || "transfer"} onChange={(e) => setJobForm({ ...jobForm, payment_method: e.target.value })}>
-                <option value="transfer">Transfer</option><option value="cash">Cash (tunai)</option>
+                <option value="transfer">{tr("payTransfer")}</option><option value="cash">{tr("payCash")}</option>
               </select>
             </label>
             {jobForm.payment_method !== "cash" && (
-              <label className="block text-sm font-medium">Rekening untuk invoice <span className="text-zinc-400 font-normal">— opsional, menimpa rekening di Pengaturan untuk invoice ini saja</span>
-                <input className="mt-1" value={jobForm.bank_text || ""} onChange={(e) => setJobForm({ ...jobForm, bank_text: e.target.value })} placeholder="Kosongkan untuk pakai rekening di Pengaturan, cth: BCA 1234567890 a.n. Andri Susilo" />
+              <label className="block text-sm font-medium">{tr("bankForInvoice")} <span className="text-zinc-400 font-normal">{tr("bankForInvoiceHint")}</span>
+                <input className="mt-1" value={jobForm.bank_text || ""} onChange={(e) => setJobForm({ ...jobForm, bank_text: e.target.value })} placeholder={tr("bankForInvoicePh")} />
               </label>
             )}
-            <label className="block text-sm font-medium">Sudah dibayar (Rp)
-              <input className="mt-1" type="number" min="0" step="1" inputMode="numeric" placeholder="0 bila belum ada pembayaran"
+            <label className="block text-sm font-medium">{tr("paidLabel")}
+              <input className="mt-1" type="number" min="0" step="1" inputMode="numeric" placeholder={tr("paidPh")}
                 value={jobForm.paid_amount}
                 onChange={(e) => {
                   const paid = e.target.value;
@@ -2547,24 +2558,24 @@ export default function Home() {
                 }} />
             </label>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm">Sisa tagihan: <strong className={Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)) > 0 ? "text-orange-400" : "text-emerald-400"}>{fmtRp(Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)))}</strong></span>
-              <button type="button" onClick={() => setJobForm({ ...jobForm, paid_amount: String(jobItemsTotal), status: "lunas" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Tandai lunas</button>
+              <span className="text-sm">{tr("remainingLabelShort")}: <strong className={Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)) > 0 ? "text-orange-400" : "text-emerald-400"}>{fmtRp(Math.max(0, jobItemsTotal - Number(jobForm.paid_amount || 0)))}</strong></span>
+              <button type="button" onClick={() => setJobForm({ ...jobForm, paid_amount: String(jobItemsTotal), status: "lunas" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("markPaid")}</button>
             </div>
-            <label className="block text-sm font-medium">Catatan
+            <label className="block text-sm font-medium">{tr("noteLabel")}
               <input className="mt-1" value={jobForm.note} onChange={(e) => setJobForm({ ...jobForm, note: e.target.value })} />
             </label>
             <div className="flex gap-2 flex-wrap pt-1">
-              <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">Simpan transaksi</button>
-              <button type="button" onClick={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobItems([{ ...emptyJobItem }]); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">Batal</button>
+              <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold flex-1">{tr("saveJob")}</button>
+              <button type="button" onClick={() => { setShowJobModal(false); setJobForm({ ...emptyJob, job_date: todayWib() }); setJobItems([{ ...emptyJobItem }]); setJobCustomerMode("existing"); setNewCustomer({ name: "", address: "", phone: "" }); }} className="bg-zinc-800 px-5 py-2.5 rounded-xl font-bold">{tr("cancel")}</button>
             </div>
           </form>
         </Modal>
       )}
 
       {showSettingsModal && (
-        <Modal title="Profil & Pengaturan" onClose={() => setShowSettingsModal(false)}>
+        <Modal lang={lang} title={tr("settingsTitle")} onClose={() => setShowSettingsModal(false)}>
           <div className="flex gap-1 border-b border-line overflow-x-auto">
-            {[["profil", "Profil"], ["pengaturan", "Pengaturan"]].map(([key, label]) => (
+            {[["profil", tr("profile")], ["pengaturan", tr("settings")]].map(([key, label]) => (
               <button key={key} type="button" onClick={() => setSettingsTab(key)}
                 className={`px-3 py-2 text-sm font-bold whitespace-nowrap border-b-2 -mb-px ${settingsTab === key ? "text-accent border-accent" : "text-zinc-400 border-transparent"}`}>{label}</button>
             ))}
@@ -2572,99 +2583,99 @@ export default function Home() {
           <div className="space-y-5 pt-4">
             {settingsTab === "profil" && (
             <form onSubmit={saveSettings} className="space-y-3">
-              <h3 className="font-bold">Informasi Usaha</h3>
-              <p className="text-sm text-zinc-400">Ditampilkan di invoice PDF. Kosongkan bila belum ada.</p>
-              <label className="block text-sm font-medium">Nama usaha / jasa
-                <input className="mt-1" value={settingsForm.business_name} onChange={(e) => setSettingsForm({ ...settingsForm, business_name: e.target.value })} placeholder="cth: Jasa Sedot WC Andro" />
+              <h3 className="font-bold">{tr("businessInfo")}</h3>
+              <p className="text-sm text-zinc-400">{tr("businessInfoHint")}</p>
+              <label className="block text-sm font-medium">{tr("businessNameLabel")}
+                <input className="mt-1" value={settingsForm.business_name} onChange={(e) => setSettingsForm({ ...settingsForm, business_name: e.target.value })} placeholder={tr("businessNamePh")} />
               </label>
-              <label className="block text-sm font-medium">Alamat usaha
+              <label className="block text-sm font-medium">{tr("businessAddressLabel")}
                 <input className="mt-1" value={settingsForm.business_address} onChange={(e) => setSettingsForm({ ...settingsForm, business_address: e.target.value })} />
               </label>
-              <label className="block text-sm font-medium">Nomor telepon
+              <label className="block text-sm font-medium">{tr("businessPhoneLabel")}
                 <input className="mt-1" inputMode="tel" value={settingsForm.business_phone} onChange={(e) => setSettingsForm({ ...settingsForm, business_phone: e.target.value })} />
               </label>
-              <label className="block text-sm font-medium">Website
+              <label className="block text-sm font-medium">{tr("websiteLabel")}
                 <input className="mt-1" inputMode="url" value={settingsForm.business_website} onChange={(e) => setSettingsForm({ ...settingsForm, business_website: e.target.value })} placeholder="https://…" />
               </label>
               <div className="space-y-3 pt-2">
-                <h4 className="font-bold">Rekening Bank</h4>
-                <p className="text-sm text-zinc-400 -mt-1">Ditampilkan di invoice agar pelanggan bisa transfer langsung tanpa kamu kirim nomor rekening manual lagi. Kosongkan bila belum ada.</p>
+                <h4 className="font-bold">{tr("bankTitle")}</h4>
+                <p className="text-sm text-zinc-400 -mt-1">{tr("bankHint")}</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <label className="block text-sm font-medium">Bank
-                    <input className="mt-1" value={settingsForm.bank_name} onChange={(e) => setSettingsForm({ ...settingsForm, bank_name: e.target.value })} placeholder="cth: BCA" />
+                  <label className="block text-sm font-medium">{tr("bankLabel")}
+                    <input className="mt-1" value={settingsForm.bank_name} onChange={(e) => setSettingsForm({ ...settingsForm, bank_name: e.target.value })} placeholder={tr("bankPh")} />
                   </label>
-                  <label className="block text-sm font-medium">Nomor rekening
-                    <input className="mt-1" inputMode="numeric" value={settingsForm.bank_account_number} onChange={(e) => setSettingsForm({ ...settingsForm, bank_account_number: e.target.value })} placeholder="cth: 1234567890" />
+                  <label className="block text-sm font-medium">{tr("accountNumber")}
+                    <input className="mt-1" inputMode="numeric" value={settingsForm.bank_account_number} onChange={(e) => setSettingsForm({ ...settingsForm, bank_account_number: e.target.value })} placeholder={tr("accountNumberPh")} />
                   </label>
                 </div>
-                <label className="block text-sm font-medium">Atas nama
-                  <input className="mt-1" value={settingsForm.bank_account_holder} onChange={(e) => setSettingsForm({ ...settingsForm, bank_account_holder: e.target.value })} placeholder="cth: Andri Susilo" />
+                <label className="block text-sm font-medium">{tr("accountHolder")}
+                  <input className="mt-1" value={settingsForm.bank_account_holder} onChange={(e) => setSettingsForm({ ...settingsForm, bank_account_holder: e.target.value })} placeholder={tr("accountHolderPh")} />
                 </label>
               </div>
               <div>
-                <p className="text-sm font-medium mb-2">Logo perusahaan <span className="text-zinc-400 font-normal">— tampil di kop invoice</span></p>
+                <p className="text-sm font-medium mb-2">{tr("logoTitle")} <span className="text-zinc-400 font-normal">{tr("logoInvoiceHint")}</span></p>
                 {settingsForm.business_logo && (
-                  <img src={settingsForm.business_logo} alt="Pratinjau logo perusahaan" className="max-h-20 max-w-full object-contain bg-white rounded-lg p-2 mb-2 border border-line" />
+                  <img src={settingsForm.business_logo} alt={tr("logoPreviewAlt")} className="max-h-20 max-w-full object-contain bg-white rounded-lg p-2 mb-2 border border-line" />
                 )}
                 <div className="flex gap-2 flex-wrap items-center">
                   <label className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm cursor-pointer">
-                    {settingsForm.business_logo ? "Ganti logo" : "Pilih logo"}
+                    {settingsForm.business_logo ? tr("changeLogo") : tr("chooseLogo")}
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { handleLogoFile(e.target.files?.[0]); e.target.value = ""; }} />
                   </label>
                   {settingsForm.business_logo && (
-                    <button type="button" onClick={() => setSettingsForm({ ...settingsForm, business_logo: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Hapus logo</button>
+                    <button type="button" onClick={() => setSettingsForm({ ...settingsForm, business_logo: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">{tr("deleteLogo")}</button>
                   )}
                 </div>
-                <p className="text-xs text-zinc-400 mt-1">Gambar otomatis diperkecil (maks. 512px). Setelah pilih/ganti logo, ketuk "Simpan informasi usaha" di bawah.</p>
+                <p className="text-xs text-zinc-400 mt-1">{tr("logoHint")}</p>
               </div>
               <div>
-                <p className="text-sm font-medium mb-2">Gambar stempel <span className="text-zinc-400 font-normal">— di-overlay di atas tanda tangan di kwitansi</span></p>
+                <p className="text-sm font-medium mb-2">{tr("stampTitle")} <span className="text-zinc-400 font-normal">{tr("stampHint")}</span></p>
                 {settingsForm.stamp_image && (
-                  <img src={settingsForm.stamp_image} alt="Pratinjau stempel" className="max-h-28 max-w-full object-contain bg-white rounded-lg p-2 mb-2 border border-line" />
+                  <img src={settingsForm.stamp_image} alt={tr("stampPreviewAlt")} className="max-h-28 max-w-full object-contain bg-white rounded-lg p-2 mb-2 border border-line" />
                 )}
                 <div className="flex gap-2 flex-wrap items-center">
                   <label className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm cursor-pointer">
-                    {settingsForm.stamp_image ? "Ganti gambar stempel" : "Pilih gambar stempel"}
+                    {settingsForm.stamp_image ? tr("changeStamp") : tr("chooseStamp")}
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { handleStampImageFile(e.target.files?.[0]); e.target.value = ""; }} />
                   </label>
                   {settingsForm.stamp_image && (
-                    <button type="button" onClick={() => setSettingsForm({ ...settingsForm, stamp_image: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Hapus stempel</button>
+                    <button type="button" onClick={() => setSettingsForm({ ...settingsForm, stamp_image: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">{tr("deleteStamp")}</button>
                   )}
                 </div>
-                <p className="text-xs text-zinc-400 mt-1">Unggah gambar stempel (misal hasil render template PSD). Pakai PNG dengan latar transparan supaya tanda tangan tetap terlihat di balik stempel. Setelah pilih/ganti, ketuk "Simpan informasi usaha" di bawah.</p>
+                <p className="text-xs text-zinc-400 mt-1">{tr("stampHelp")}</p>
               </div>
-              <label className="block text-sm font-medium">Nama penandatangan (opsional)
-                <input className="mt-1" value={settingsForm.signer_name} onChange={(e) => setSettingsForm({ ...settingsForm, signer_name: e.target.value })} placeholder="cth: Andri Susilo" />
+              <label className="block text-sm font-medium">{tr("signerLabel")}
+                <input className="mt-1" value={settingsForm.signer_name} onChange={(e) => setSettingsForm({ ...settingsForm, signer_name: e.target.value })} placeholder={tr("accountHolderPh")} />
               </label>
-              <p className="text-xs text-zinc-400 -mt-1">Nama yang tampil di bawah "Hormat kami," pada kwitansi. Kosongkan untuk memakai nama usaha.</p>
+              <p className="text-xs text-zinc-400 -mt-1">{tr("signerHint")}</p>
               <div>
-                <p className="text-sm font-medium mb-2">Tanda tangan <span className="text-zinc-400 font-normal">— gambar stempel di-overlay di atasnya di kwitansi</span></p>
+                <p className="text-sm font-medium mb-2">{tr("signatureTitle")} <span className="text-zinc-400 font-normal">{tr("signatureHint")}</span></p>
                 {settingsForm.signature && (
-                  <img src={settingsForm.signature} alt="Pratinjau tanda tangan" className="max-h-20 max-w-full object-contain bg-white rounded-lg p-2 mb-2 border border-line" />
+                  <img src={settingsForm.signature} alt={tr("signaturePreviewAlt")} className="max-h-20 max-w-full object-contain bg-white rounded-lg p-2 mb-2 border border-line" />
                 )}
                 <div className="flex gap-2 flex-wrap items-center">
                   <label className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm cursor-pointer">
-                    {settingsForm.signature ? "Ganti tanda tangan" : "Pilih tanda tangan"}
+                    {settingsForm.signature ? tr("changeSignature") : tr("chooseSignature")}
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { handleSignatureFile(e.target.files?.[0]); e.target.value = ""; }} />
                   </label>
                   {settingsForm.signature && (
-                    <button type="button" onClick={() => setSettingsForm({ ...settingsForm, signature: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Hapus tanda tangan</button>
+                    <button type="button" onClick={() => setSettingsForm({ ...settingsForm, signature: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">{tr("deleteSignature")}</button>
                   )}
                 </div>
-                <p className="text-xs text-zinc-400 mt-1">Pakai gambar PNG dengan latar transparan supaya gambar stempel tetap terlihat di atas tanda tangan. Setelah pilih/ganti, ketuk "Simpan informasi usaha" di bawah.</p>
+                <p className="text-xs text-zinc-400 mt-1">{tr("signatureHelp")}</p>
               </div>
               <div className="flex items-center gap-3">
-                <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">Simpan informasi usaha</button>
+                <button type="submit" className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold">{tr("saveBusiness")}</button>
                 {settingsSaved && <span className="text-sm text-emerald-400">{settingsSaved}</span>}
               </div>
             </form>
             )}
             {settingsTab === "pengaturan" && (<>
             <div className="space-y-3">
-              <h3 className="font-bold">Skema warna</h3>
+              <h3 className="font-bold">{tr("colorScheme")}</h3>
               <div className="flex gap-3 overflow-x-auto justify-center px-2 py-2">
                 {Object.entries(SCHEMES).map(([key, s]) => (
-                  <button key={key} type="button" onClick={() => applyScheme(key)} aria-label={s.label} title={s.label}
+                  <button key={key} type="button" onClick={() => applyScheme(key)} aria-label={tr("scheme" + key[0].toUpperCase() + key.slice(1))} title={tr("scheme" + key[0].toUpperCase() + key.slice(1))}
                     className={`w-9 h-9 rounded-full shrink-0 border border-white/25 flex items-center justify-center ${scheme === key ? "ring-2 ring-zinc-400 scale-110" : ""}`}
                     style={{ background: s.hex }}>
                     {scheme === key && (
@@ -2675,52 +2686,62 @@ export default function Home() {
               </div>
             </div>
             <div className="border-t border-line pt-4 space-y-3">
-              <h3 className="font-bold">Daftar Harga Jasa</h3>
-              <p className="text-sm text-zinc-400">Isi sekali, setelah itu harga satuan terisi otomatis saat jasa ini dipilih di form transaksi. Mengubah harga di sini hanya memengaruhi transaksi baru, transaksi lama tidak berubah.</p>
+              <h3 className="font-bold">{tr("language")}</h3>
+              <p className="text-sm text-zinc-400">{tr("languageHint")}</p>
+              <div className="flex gap-2 flex-wrap">
+                {Object.entries(LANGS).map(([code, label]) => (
+                  <button key={code} type="button" onClick={() => applyLang(code)}
+                    className={`px-4 py-2.5 rounded-xl font-bold text-sm ${lang === code ? "bg-accent" : "bg-zinc-800"}`}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="border-t border-line pt-4 space-y-3">
+              <h3 className="font-bold">{tr("priceList")}</h3>
+              <p className="text-sm text-zinc-400">{tr("priceListHint")}</p>
               <form onSubmit={submitPrice} className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <label className="block text-sm font-medium col-span-2">Nama jasa
-                    <input className="mt-1" required value={priceForm.service_type} onChange={(e) => setPriceForm({ ...priceForm, service_type: e.target.value })} placeholder="cth: Sedot WC" />
+                  <label className="block text-sm font-medium col-span-2">{tr("serviceNameLabel")}
+                    <input className="mt-1" required value={priceForm.service_type} onChange={(e) => setPriceForm({ ...priceForm, service_type: e.target.value })} placeholder={tr("serviceNamePh")} />
                   </label>
-                  <label className="block text-sm font-medium">Satuan
+                  <label className="block text-sm font-medium">{tr("unitLabel")}
                     <select className="mt-1" value={priceForm.unit} onChange={(e) => setPriceForm({ ...priceForm, unit: e.target.value })}>
                       <option value="kubik">kubik</option><option value="strip">strip</option><option value="pcs">pcs</option><option value="paket">paket</option>
                     </select>
                   </label>
-                  <label className="block text-sm font-medium">Harga satuan (Rp)
+                  <label className="block text-sm font-medium">{tr("priceUnitLabel")}
                     <input className="mt-1" type="number" min="0" step="1" required inputMode="numeric" value={priceForm.unit_price} onChange={(e) => setPriceForm({ ...priceForm, unit_price: e.target.value })} />
                   </label>
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  <button type="submit" className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-xl font-bold text-sm flex-1">{priceForm.id ? "Simpan perubahan" : "Tambah harga"}</button>
-                  {priceForm.id && <button type="button" onClick={() => setPriceForm({ id: "", service_type: "", unit: "kubik", unit_price: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Batal</button>}
+                  <button type="submit" className="bg-accent hover-bg-accent-dark px-4 py-2.5 rounded-xl font-bold text-sm flex-1">{priceForm.id ? tr("saveChanges") : tr("addPrice")}</button>
+                  {priceForm.id && <button type="button" onClick={() => setPriceForm({ id: "", service_type: "", unit: "kubik", unit_price: "" })} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">{tr("cancel")}</button>}
                 </div>
               </form>
-              {!servicePrices.length && <p className="text-sm text-zinc-400">Belum ada harga tersimpan. Tambahkan jasa yang sering dikerjakan di atas.</p>}
+              {!servicePrices.length && <p className="text-sm text-zinc-400">{tr("noPrices")}</p>}
               <div className="space-y-2">
                 {servicePrices.map((p) => (
                   <div key={p.id} className="flex justify-between gap-2 text-sm border border-line rounded-xl p-3">
                     <div><strong>{p.service_type}</strong><span className="text-zinc-400"> · {fmtRp(p.unit_price)} / {p.unit}</span></div>
                     <div className="flex gap-2 shrink-0">
-                      <button type="button" onClick={() => setPriceForm({ id: p.id, service_type: p.service_type, unit: p.unit, unit_price: String(p.unit_price) })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Edit</button>
-                      <button type="button" onClick={() => deletePrice(p.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Hapus</button>
+                      <button type="button" onClick={() => setPriceForm({ id: p.id, service_type: p.service_type, unit: p.unit, unit_price: String(p.unit_price) })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("edit")}</button>
+                      <button type="button" onClick={() => deletePrice(p.id)} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("delete")}</button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
             <div className="border-t border-line pt-4 space-y-2">
-              <h3 className="font-bold mb-1">Cadangan data</h3>
-              <p className="text-sm text-zinc-400">Unduh seluruh data (pelanggan, transaksi, daftar harga, dan pengaturan usaha) ke satu file JSON. Bila data terhapus salah atau bermasalah, pulihkan dari file itu. Restore mengganti seluruh data yang ada sekarang, jadi unduh cadangan dulu sebelum restore.</p>
-              <button type="button" onClick={downloadBackup} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm">Unduh cadangan</button>
-              <label className="block text-sm text-zinc-400 pt-2">Pulihkan dari file cadangan:</label>
+              <h3 className="font-bold mb-1">{tr("backupTitle")}</h3>
+              <p className="text-sm text-zinc-400">{tr("backupHint")}</p>
+              <button type="button" onClick={downloadBackup} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm">{tr("downloadBackup")}</button>
+              <label className="block text-sm text-zinc-400 pt-2">{tr("restoreLabel")}</label>
               <input type="file" accept=".json,application/json" onChange={(e) => pickRestoreFile(e.target.files?.[0] || null)} className="text-sm w-full" />
               {restorePreview?.error && <p className="text-sm text-red-400">{restorePreview.error}</p>}
               {restorePreview?.data && (
                 <div className="border border-line rounded-xl p-3 text-sm space-y-2">
-                  <p><strong>{restoreFile?.name}</strong>{restorePreview.exported_at && <span className="text-zinc-400"> · diekspor {restorePreview.exported_at.slice(0, 10)}</span>}</p>
-                  <p className="text-zinc-400">{restorePreview.customers} pelanggan · {restorePreview.jobs} transaksi · {restorePreview.prices} harga jasa</p>
-                  <button type="button" onClick={doRestore} disabled={restoreBusy} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">{restoreBusy ? "Memulihkan…" : "Pulihkan dari file ini"}</button>
+                  <p><strong>{restoreFile?.name}</strong>{restorePreview.exported_at && <span className="text-zinc-400"> · {tr("exportedOn", { date: restorePreview.exported_at.slice(0, 10) })}</span>}</p>
+                  <p className="text-zinc-400">{tr("restoreSummary", { customers: restorePreview.customers, jobs: restorePreview.jobs, prices: restorePreview.prices })}</p>
+                  <button type="button" onClick={doRestore} disabled={restoreBusy} className="bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">{restoreBusy ? tr("restoring") : tr("restoreBtn")}</button>
                 </div>
               )}
               {backupMessage && <p className="text-sm text-emerald-400">{backupMessage}</p>}
@@ -2731,7 +2752,7 @@ export default function Home() {
       )}
 
       {historyCustomer && (
-        <Modal title="Riwayat pelanggan" onClose={() => setHistoryCustomer(null)}>
+        <Modal lang={lang} title={tr("historyTitle")} onClose={() => setHistoryCustomer(null)}>
           <div className="space-y-3 text-sm">
             <div>
               <strong>{historyCustomer.name}</strong>
@@ -2739,27 +2760,27 @@ export default function Home() {
               {historyCustomer.phone && <div className="text-zinc-400">{historyCustomer.phone}</div>}
             </div>
             {historyJobs === null ? (
-              <p className="text-zinc-400">Memuat…</p>
+              <p className="text-zinc-400">{tr("loading")}</p>
             ) : (
               <>
                 <div className="bg-panel border border-line rounded-xl p-3 space-y-1">
-                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Total transaksi</span><strong>{historyJobs.length} transaksi · {fmtRp(historyJobs.reduce((s, j) => s + Number(j.amount), 0))}</strong></div>
-                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Sudah dibayar</span><strong>{fmtRp(historyJobs.reduce((s, j) => s + paidOf(j), 0))}</strong></div>
-                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Sisa tagihan</span><strong className={historyJobs.reduce((s, j) => s + remainingOf(j), 0) > 0 ? "text-orange-400" : ""}>{fmtRp(historyJobs.reduce((s, j) => s + remainingOf(j), 0))}</strong></div>
-                  <div className="flex justify-between gap-2"><span className="text-zinc-400">Terakhir pakai jasa</span><strong>{historyJobs.length ? [...historyJobs.map((j) => j.job_date)].sort().reverse()[0] : "—"}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-zinc-400">{tr("historyTotalTx")}</span><strong>{historyJobs.length} transaksi · {fmtRp(historyJobs.reduce((s, j) => s + Number(j.amount), 0))}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-zinc-400">{tr("historyPaid")}</span><strong>{fmtRp(historyJobs.reduce((s, j) => s + paidOf(j), 0))}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-zinc-400">{tr("historyRemaining")}</span><strong className={historyJobs.reduce((s, j) => s + remainingOf(j), 0) > 0 ? "text-orange-400" : ""}>{fmtRp(historyJobs.reduce((s, j) => s + remainingOf(j), 0))}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-zinc-400">{tr("historyLastUsed")}</span><strong>{historyJobs.length ? [...historyJobs.map((j) => j.job_date)].sort().reverse()[0] : "—"}</strong></div>
                 </div>
                 <div className="space-y-2">
                   {historyJobs.map((j) => (
                     <div key={j.id} className="border border-line rounded-xl p-3">
-                      <div className="flex justify-between gap-2"><strong>{j.service_type}</strong>{statusPill(j.status)}</div>
-                      <div className="text-zinc-400 mt-1">{j.job_date} · Total {fmtRp(j.amount)}{paidOf(j) > 0 ? ` · Dibayar ${fmtRp(paidOf(j))}` : ""}{remainingOf(j) > 0 ? ` · Sisa ${fmtRp(remainingOf(j))}` : ""}</div>
+                      <div className="flex justify-between gap-2"><strong>{j.service_type}</strong>{statusPill(j.status, lang)}</div>
+                      <div className="text-zinc-400 mt-1">{j.job_date} · {tr("totalLabel")} {fmtRp(j.amount)}{paidOf(j) > 0 ? ` · ${tr("paidPart", { amount: fmtRp(paidOf(j)) })}` : ""}{remainingOf(j) > 0 ? ` · ${tr("remainingPart", { amount: fmtRp(remainingOf(j)) })}` : ""}</div>
                       <div className="flex gap-2 mt-2 flex-wrap">
-                        <button onClick={() => { const job = j; setHistoryCustomer(null); setDetailJob(job); }} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Detail</button>
-                        <button onClick={() => { const job = j; setHistoryCustomer(null); duplicateJob(job); }} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">Ulangi</button>
+                        <button onClick={() => { const job = j; setHistoryCustomer(null); setDetailJob(job); }} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("detail")}</button>
+                        <button onClick={() => { const job = j; setHistoryCustomer(null); duplicateJob(job); }} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-sm font-bold">{tr("repeat")}</button>
                       </div>
                     </div>
                   ))}
-                  {!historyJobs.length && <p className="text-zinc-400">Belum ada transaksi untuk pelanggan ini.</p>}
+                  {!historyJobs.length && <p className="text-zinc-400">{tr("noHistoryTx")}</p>}
                 </div>
               </>
             )}
@@ -2768,9 +2789,9 @@ export default function Home() {
       )}
 
       {duplicateWarning && (
-        <Modal title="Pelanggan serupa sudah ada" onClose={() => setDuplicateWarning(null)}>
+        <Modal lang={lang} title={tr("dupTitle")} onClose={() => setDuplicateWarning(null)}>
           <div className="space-y-3 text-sm">
-            <p className="text-zinc-400">Nama atau nomor WA ini sudah tercatat. Pakai data lama supaya tidak terjadi duplikat, atau tetap simpan sebagai pelanggan baru bila memang orang yang berbeda.</p>
+            <p className="text-zinc-400">{tr("dupDesc")}</p>
             <div className="space-y-2">
               {duplicateWarning.matches.map((m) => (
                 <div key={m.id} className="border border-line rounded-xl p-3 flex justify-between gap-2">
@@ -2779,31 +2800,31 @@ export default function Home() {
                     {m.phone && <div className="text-zinc-400">{m.phone}</div>}
                     {m.address && <div className="text-zinc-400">{m.address}</div>}
                   </div>
-                  <button onClick={() => duplicateWarning.onUseExisting(m)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">Pakai ini</button>
+                  <button onClick={() => duplicateWarning.onUseExisting(m)} className="bg-accent px-3 py-1.5 rounded-lg text-sm font-bold shrink-0 self-start">{tr("useThis")}</button>
                 </div>
               ))}
             </div>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={duplicateWarning.onProceed} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm flex-1">Tetap simpan sebagai baru</button>
-              <button onClick={() => setDuplicateWarning(null)} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">Batal</button>
+              <button onClick={duplicateWarning.onProceed} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm flex-1">{tr("keepAsNew")}</button>
+              <button onClick={() => setDuplicateWarning(null)} className="bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">{tr("cancel")}</button>
             </div>
           </div>
         </Modal>
       )}
 
       {detailJob && (
-        <Modal title="Detail transaksi" onClose={() => setDetailJob(null)}>
+        <Modal lang={lang} title={tr("detailTitle")} onClose={() => setDetailJob(null)}>
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between gap-3"><span className="text-zinc-400">Tanggal</span><strong>{detailJob.job_date}</strong></div>
-            <div className="flex justify-between gap-3"><span className="text-zinc-400">Pelanggan</span><strong className="text-right">{detailJob.customer_name}</strong></div>
+            <div className="flex justify-between gap-3"><span className="text-zinc-400">{tr("tableDate")}</span><strong>{detailJob.job_date}</strong></div>
+            <div className="flex justify-between gap-3"><span className="text-zinc-400">{tr("tableCustomer")}</span><strong className="text-right">{detailJob.customer_name}</strong></div>
             {(customers.find((c) => c.id === Number(detailJob.customer_id))?.phone || detailJob.customer_phone) && (
-              <div className="flex justify-between gap-3"><span className="text-zinc-400">Telepon / WA</span><strong>{customers.find((c) => c.id === Number(detailJob.customer_id))?.phone || detailJob.customer_phone}</strong></div>
+              <div className="flex justify-between gap-3"><span className="text-zinc-400">{tr("detailPhone")}</span><strong>{customers.find((c) => c.id === Number(detailJob.customer_id))?.phone || detailJob.customer_phone}</strong></div>
             )}
             {customers.find((c) => c.id === Number(detailJob.customer_id))?.address && (
-              <div className="flex justify-between gap-3"><span className="text-zinc-400">Alamat</span><strong className="text-right">{customers.find((c) => c.id === Number(detailJob.customer_id)).address}</strong></div>
+              <div className="flex justify-between gap-3"><span className="text-zinc-400">{tr("addressLabel")}</span><strong className="text-right">{customers.find((c) => c.id === Number(detailJob.customer_id)).address}</strong></div>
             )}
             <div>
-              <p className="text-zinc-400 mb-1">Layanan</p>
+              <p className="text-zinc-400 mb-1">{tr("servicesPlain")}</p>
               <div className="border border-line rounded-xl overflow-hidden">
                 {(detailJob.items || [{ service_type: detailJob.service_type, qty: 1, unit: "paket", unit_price: detailJob.amount, amount: detailJob.amount }]).map((it, i) => (
                   <div key={i} className="flex justify-between gap-3 px-3 py-2 border-t border-line first:border-t-0">
@@ -2811,13 +2832,13 @@ export default function Home() {
                     <span className="text-right"><span className="text-zinc-400 block text-xs">{fmtRp(it.unit_price)} / {it.unit || "paket"}</span><strong>{fmtRp(it.amount)}</strong></span>
                   </div>
                 ))}
-                <div className="flex justify-between gap-3 px-3 py-2 border-t border-line bg-zinc-800/50"><strong>Total</strong><strong>{fmtRp(detailJob.amount)}</strong></div>
+                <div className="flex justify-between gap-3 px-3 py-2 border-t border-line bg-zinc-800/50"><strong>{tr("totalLabel")}</strong><strong>{fmtRp(detailJob.amount)}</strong></div>
               </div>
             </div>
-            <div className="flex justify-between gap-3"><span className="text-zinc-400">Status</span>{statusPill(detailJob.status)}</div>
-            {paidOf(detailJob) > 0 && <div className="flex justify-between gap-3"><span className="text-zinc-400">Sudah dibayar</span><strong>{fmtRp(paidOf(detailJob))}</strong></div>}
-            {remainingOf(detailJob) > 0 && <div className="flex justify-between gap-3"><span className="text-zinc-400">Sisa tagihan</span><strong className="text-orange-400">{fmtRp(remainingOf(detailJob))}</strong></div>}
-            {detailJob.note && <div className="flex justify-between gap-3"><span className="text-zinc-400">Catatan</span><strong className="text-right">{detailJob.note}</strong></div>}
+            <div className="flex justify-between gap-3"><span className="text-zinc-400">{tr("status")}</span>{statusPill(detailJob.status, lang)}</div>
+            {paidOf(detailJob) > 0 && <div className="flex justify-between gap-3"><span className="text-zinc-400">{tr("historyPaid")}</span><strong>{fmtRp(paidOf(detailJob))}</strong></div>}
+            {remainingOf(detailJob) > 0 && <div className="flex justify-between gap-3"><span className="text-zinc-400">{tr("historyRemaining")}</span><strong className="text-orange-400">{fmtRp(remainingOf(detailJob))}</strong></div>}
+            {detailJob.note && <div className="flex justify-between gap-3"><span className="text-zinc-400">{tr("noteLabel")}</span><strong className="text-right">{detailJob.note}</strong></div>}
           </div>
           <div className="mt-5 space-y-2">
             <button onClick={() => sendInvoiceWhatsApp(detailJob)} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3.5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 shadow">
@@ -2827,52 +2848,52 @@ export default function Home() {
                   <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
                 </g>
               </svg>
-              Kirim via WhatsApp
+              {tr("sendWa")}
             </button>
             {remainingOf(detailJob) > 0 && (
-              <button onClick={() => markJobPaid(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tandai lunas (sisa {fmtRp(remainingOf(detailJob))})</button>
+              <button onClick={() => markJobPaid(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("markPaidRemaining", { amount: fmtRp(remainingOf(detailJob)) })}</button>
             )}
-            <button onClick={() => { const j = detailJob; setDetailJob(null); duplicateJob(j); }} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Ulangi transaksi</button>
+            <button onClick={() => { const j = detailJob; setDetailJob(null); duplicateJob(j); }} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("repeatJob")}</button>
             <button onClick={() => previewInvoice(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-              Preview Invoice
+              {tr("previewInvoice")}
             </button>
             {paidOf(detailJob) > 0 && (
               <>
                 <button onClick={() => previewReceipt(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-                  Preview Kwitansi
+                  {tr("previewReceipt")}
                 </button>
                 <button onClick={() => sendReceiptWhatsApp(detailJob)} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3.5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 shadow">
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
                   </svg>
-                  Kirim Kwitansi via WhatsApp
+                  {tr("sendReceiptWa")}
                 </button>
                 <button onClick={() => downloadReceipt(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
-                  Unduh Kwitansi (PDF)
+                  {tr("downloadReceipt")}
                 </button>
               </>
             )}
             <button onClick={() => openOfferForm(detailJob)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M9 13h6M9 17h6" /></svg>
-              Buat Surat Penawaran Harga
+              {tr("createOffer")}
             </button>
             <div className="grid grid-cols-3 gap-2">
-              <button onClick={() => downloadInvoice(detailJob)} aria-label="Unduh Invoice (PDF)" title="Unduh Invoice (PDF)" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
+              <button onClick={() => downloadInvoice(detailJob)} aria-label={tr("downloadInvoiceAria")} title={tr("downloadInvoiceAria")} className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
               </button>
-              <button onClick={() => { const j = detailJob; setDetailJob(null); openJobModal(j); }} aria-label="Edit transaksi" title="Edit transaksi" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
+              <button onClick={() => { const j = detailJob; setDetailJob(null); openJobModal(j); }} aria-label={tr("editJob")} title={tr("editJob")} className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
               </button>
-              <button onClick={() => setDetailJob(null)} aria-label="Tutup" title="Tutup" className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
+              <button onClick={() => setDetailJob(null)} aria-label={tr("close")} title={tr("close")} className="bg-zinc-800 h-12 rounded-xl flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18" /><path d="M6 6l12 12" /></svg>
               </button>
             </div>
           </div>
-          <p className="text-xs text-zinc-400 mt-3">Kirim via WhatsApp membagikan file PDF invoice langsung (di HP Android, pilih WhatsApp di lembar berbagi lalu pilih kontak pelanggan). Bila browser tidak mendukung berbagi file, tombol ini membuka chat wa.me ke nomor WA pelanggan dengan pesan teks invoice — wa.me tidak bisa melampirkan file, jadi dalam kasus itu unduh dulu PDF-nya lalu lampirkan manual.</p>
-          <p className="text-xs text-zinc-400 mt-3">Header invoice memakai informasi usaha dari Pengaturan (tombol profil di atas). Isi dulu di sana bila nama/alamat/telepon/website usaha belum tampil di invoice.</p>
+          <p className="text-xs text-zinc-400 mt-3">{tr("detailWaHint")}</p>
+          <p className="text-xs text-zinc-400 mt-3">{tr("detailInvoiceHint")}</p>
         </Modal>
       )}
 
@@ -2888,7 +2909,7 @@ export default function Home() {
         const remaining = Math.max(0, Number(job.amount) - paid);
         const isLunas = job.status === "lunas";
         return (
-        <Modal title="Preview Invoice" onClose={closeInvoicePreview}>
+        <Modal lang={lang} title={tr("previewInvoice")} onClose={closeInvoicePreview}>
           <div className="relative bg-white text-black rounded-xl overflow-hidden border border-line text-sm">
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
               <span className={`font-bold tracking-wide whitespace-nowrap select-none ${isLunas ? "text-[#e60012]/15 text-4xl" : "text-zinc-400/30 text-3xl"}`}>{isLunas ? "LUNAS" : "BELUM LUNAS"}</span>
@@ -2927,10 +2948,10 @@ export default function Home() {
             </div>
           </div>
           <div className="mt-4 space-y-2">
-            <button onClick={() => openPdfViewer(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Buka di PDF viewer</button>
-            <button onClick={() => downloadInvoice(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
-            <button onClick={() => { const j = invoicePreview.job; closeInvoicePreview(); sendInvoiceWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">Kirim via WhatsApp</button>
-            <button onClick={closeInvoicePreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tutup preview</button>
+            <button onClick={() => openPdfViewer(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("openPdfViewer")}</button>
+            <button onClick={() => downloadInvoice(invoicePreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("downloadPdf")}</button>
+            <button onClick={() => { const j = invoicePreview.job; closeInvoicePreview(); sendInvoiceWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">{tr("sendWa")}</button>
+            <button onClick={closeInvoicePreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("closePreview")}</button>
           </div>
         </Modal>
         );
@@ -2947,7 +2968,7 @@ export default function Home() {
         const stripeBg = "repeating-linear-gradient(to bottom, #c8c8c8 0px, #c8c8c8 0.75px, transparent 0.75px, transparent 4.5px)";
         const signerName = settings.signer_name || settings.business_name || "Pencatat Laporan";
         return (
-        <Modal title="Preview Kwitansi" onClose={closeReceiptPreview}>
+        <Modal lang={lang} title={tr("previewReceipt")} onClose={closeReceiptPreview}>
           <div className="relative bg-white text-black rounded-xl overflow-hidden border border-line text-sm">
             <div className="relative z-10 p-4">
               <div className="flex gap-3 items-start justify-between">
@@ -2996,112 +3017,112 @@ export default function Home() {
             </div>
           </div>
           <div className="mt-4 space-y-2">
-            <button onClick={() => downloadReceipt(receiptPreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
-            <button onClick={() => { const j = receiptPreview.job; closeReceiptPreview(); sendReceiptWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">Kirim via WhatsApp</button>
-            <button onClick={closeReceiptPreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Tutup preview</button>
+            <button onClick={() => downloadReceipt(receiptPreview.job)} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("downloadPdf")}</button>
+            <button onClick={() => { const j = receiptPreview.job; closeReceiptPreview(); sendReceiptWhatsApp(j); }} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-sm text-white">{tr("sendWa")}</button>
+            <button onClick={closeReceiptPreview} className="w-full bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("closePreview")}</button>
           </div>
         </Modal>
         );
       })()}
 
       {offerForm && (
-        <Modal title="Surat Penawaran Harga" onClose={() => setOfferForm(null)}>
+        <Modal lang={lang} title={tr("offerTitle")} onClose={() => setOfferForm(null)}>
           <div className="space-y-4 text-sm">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="font-bold text-sm">Nomor</label>
+                <label className="font-bold text-sm">{tr("offerNumber")}</label>
                 <input className="mt-1" value={offerForm.number} onChange={(e) => setOfferForm({ ...offerForm, number: e.target.value })} />
               </div>
               <div>
-                <label className="font-bold text-sm">Sifat</label>
+                <label className="font-bold text-sm">{tr("offerNature")}</label>
                 <input className="mt-1" value={offerForm.sifat} onChange={(e) => setOfferForm({ ...offerForm, sifat: e.target.value })} />
               </div>
               <div>
-                <label className="font-bold text-sm">Lampiran</label>
+                <label className="font-bold text-sm">{tr("offerAttachment")}</label>
                 <input className="mt-1" value={offerForm.lampiran} onChange={(e) => setOfferForm({ ...offerForm, lampiran: e.target.value })} />
               </div>
               <div>
-                <label className="font-bold text-sm">Perihal</label>
+                <label className="font-bold text-sm">{tr("offerSubject")}</label>
                 <input className="mt-1" value={offerForm.perihal} onChange={(e) => setOfferForm({ ...offerForm, perihal: e.target.value })} />
               </div>
               <div>
-                <label className="font-bold text-sm">Tempat</label>
-                <input className="mt-1" value={offerForm.place} onChange={(e) => setOfferForm({ ...offerForm, place: e.target.value })} placeholder="Kota" />
+                <label className="font-bold text-sm">{tr("offerPlace")}</label>
+                <input className="mt-1" value={offerForm.place} onChange={(e) => setOfferForm({ ...offerForm, place: e.target.value })} placeholder={tr("offerPlacePh")} />
               </div>
               <div>
-                <label className="font-bold text-sm">Tanggal</label>
+                <label className="font-bold text-sm">{tr("tableDate")}</label>
                 <input type="date" className="mt-1" value={offerForm.date} onChange={(e) => setOfferForm({ ...offerForm, date: e.target.value })} />
               </div>
             </div>
             <div>
-              <label className="font-bold text-sm">Kepada Yth.</label>
+              <label className="font-bold text-sm">{tr("offerTo")}</label>
               <input className="mt-1" value={offerForm.recipientTitle} onChange={(e) => setOfferForm({ ...offerForm, recipientTitle: e.target.value })} />
-              <input className="mt-2" value={offerForm.recipientName} onChange={(e) => setOfferForm({ ...offerForm, recipientName: e.target.value })} placeholder="Nama penerima / perusahaan" />
-              <input className="mt-2" value={offerForm.recipientAddress} onChange={(e) => setOfferForm({ ...offerForm, recipientAddress: e.target.value })} placeholder="Alamat penerima (opsional)" />
+              <input className="mt-2" value={offerForm.recipientName} onChange={(e) => setOfferForm({ ...offerForm, recipientName: e.target.value })} placeholder={tr("offerRecipientNamePh")} />
+              <input className="mt-2" value={offerForm.recipientAddress} onChange={(e) => setOfferForm({ ...offerForm, recipientAddress: e.target.value })} placeholder={tr("offerRecipientAddrPh")} />
             </div>
             <div>
               <div className="flex justify-between items-center gap-2">
-                <label className="font-bold text-sm">Pembuka surat</label>
-                <button type="button" onClick={() => setOfferEditField({ key: "intro", label: "Pembuka surat" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">⤢ Perbesar</button>
+                <label className="font-bold text-sm">{tr("offerIntro")}</label>
+                <button type="button" onClick={() => setOfferEditField({ key: "intro", label: tr("offerIntro") })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">{tr("enlarge")}</button>
               </div>
               <textarea className="mt-1" rows={7} style={{ minHeight: "168px" }} value={offerForm.intro} onChange={(e) => setOfferForm({ ...offerForm, intro: e.target.value })} />
             </div>
             <div>
-              <p className="font-bold text-sm mb-2">Tarif layanan <span className="text-zinc-400 font-normal">— dari daftar harga jasa usaha ini</span></p>
+              <p className="font-bold text-sm mb-2">{tr("offerRates")} <span className="text-zinc-400 font-normal">{tr("offerRatesHint")}</span></p>
               <div className="space-y-2">
                 {offerForm.rows.map((r, i) => (
                   <div key={i} className="border border-line rounded-xl p-3 space-y-2">
                     <div className="flex items-center gap-2">
-                      <input type="checkbox" className="w-4 h-4 accent-[var(--accent)] shrink-0" style={{ width: "auto" }} checked={r.checked} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, checked: e.target.checked } : x) })} aria-label="Sertakan layanan ini" />
-                      <input value={r.service_type} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, service_type: e.target.value } : x) })} placeholder="Nama layanan" className="flex-1 min-w-0" />
-                      <button type="button" onClick={() => setOfferForm({ ...offerForm, rows: offerForm.rows.filter((_, j) => j !== i) })} aria-label="Hapus layanan" className="bg-zinc-800 w-8 h-8 rounded-lg font-bold shrink-0">×</button>
+                      <input type="checkbox" className="w-4 h-4 accent-[var(--accent)] shrink-0" style={{ width: "auto" }} checked={r.checked} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, checked: e.target.checked } : x) })} aria-label={tr("includeServiceAria")} />
+                      <input value={r.service_type} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, service_type: e.target.value } : x) })} placeholder={tr("serviceNamePh2")} className="flex-1 min-w-0" />
+                      <button type="button" onClick={() => setOfferForm({ ...offerForm, rows: offerForm.rows.filter((_, j) => j !== i) })} aria-label={tr("deleteServiceAria")} className="bg-zinc-800 w-8 h-8 rounded-lg font-bold shrink-0">×</button>
                     </div>
                     <div className="grid grid-cols-2 gap-2 pl-6">
                       <div>
-                        <label className="text-xs text-zinc-400">Tarif (Rp)</label>
+                        <label className="text-xs text-zinc-400">{tr("rateLabel")}</label>
                         <input inputMode="numeric" value={r.unit_price} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, unit_price: e.target.value.replace(/\D/g, "") } : x) })} />
                       </div>
                       <div>
-                        <label className="text-xs text-zinc-400">Satuan</label>
-                        <input value={r.unit} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, unit: e.target.value } : x) })} placeholder="cth: meter kubik" />
+                        <label className="text-xs text-zinc-400">{tr("unitLabel")}</label>
+                        <input value={r.unit} onChange={(e) => setOfferForm({ ...offerForm, rows: offerForm.rows.map((x, j) => j === i ? { ...x, unit: e.target.value } : x) })} placeholder={tr("unitPh")} />
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-              <button type="button" onClick={() => setOfferForm({ ...offerForm, rows: [...offerForm.rows, { service_type: "", unit: "paket", unit_price: 0, checked: true }] })} className="mt-2 bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">+ Tambah layanan</button>
+              <button type="button" onClick={() => setOfferForm({ ...offerForm, rows: [...offerForm.rows, { service_type: "", unit: "paket", unit_price: 0, checked: true }] })} className="mt-2 bg-zinc-800 px-4 py-2.5 rounded-xl font-bold text-sm">{tr("addService")}</button>
             </div>
             <div>
               <div className="flex justify-between items-center gap-2">
-                <label className="font-bold text-sm">Keterangan (Ket)</label>
-                <button type="button" onClick={() => setOfferEditField({ key: "notes", label: "Keterangan (Ket)" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">⤢ Perbesar</button>
+                <label className="font-bold text-sm">{tr("offerNotes")}</label>
+                <button type="button" onClick={() => setOfferEditField({ key: "notes", label: tr("offerNotes") })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">{tr("enlarge")}</button>
               </div>
-              <textarea className="mt-1" rows={3} value={offerForm.notes} onChange={(e) => setOfferForm({ ...offerForm, notes: e.target.value })} placeholder="cth: Lumpur Tinja: berasal dari toilet/wc; Lumpur Domestik: berasal dari toilet/wc, cuci tangan, dapur, dll (non-B3)" />
+              <textarea className="mt-1" rows={3} value={offerForm.notes} onChange={(e) => setOfferForm({ ...offerForm, notes: e.target.value })} placeholder={tr("offerNotesPh")} />
             </div>
             <div>
               <div className="flex justify-between items-center gap-2">
-                <label className="font-bold text-sm">Penutup surat</label>
-                <button type="button" onClick={() => setOfferEditField({ key: "closing", label: "Penutup surat" })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">⤢ Perbesar</button>
+                <label className="font-bold text-sm">{tr("offerClosing")}</label>
+                <button type="button" onClick={() => setOfferEditField({ key: "closing", label: tr("offerClosing") })} className="bg-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">{tr("enlarge")}</button>
               </div>
               <textarea className="mt-1" rows={6} style={{ minHeight: "144px" }} value={offerForm.closing} onChange={(e) => setOfferForm({ ...offerForm, closing: e.target.value })} />
             </div>
             <div>
-              <label className="font-bold text-sm">Nama penandatangan <span className="text-zinc-400 font-normal">(opsional)</span></label>
-              <input className="mt-1" value={offerForm.signer} onChange={(e) => setOfferForm({ ...offerForm, signer: e.target.value })} placeholder="Dibiarkan kosong bila belum ada" />
+              <label className="font-bold text-sm">{tr("offerSigner")} <span className="text-zinc-400 font-normal">{tr("optional")}</span></label>
+              <input className="mt-1" value={offerForm.signer} onChange={(e) => setOfferForm({ ...offerForm, signer: e.target.value })} placeholder={tr("offerSignerPh")} />
             </div>
             <label className="flex items-start gap-2 text-sm font-medium cursor-pointer">
               <input type="checkbox" className="w-4 h-4 mt-0.5 accent-[var(--accent)] shrink-0" style={{ width: "auto" }} checked={!!offerForm.showSignature} onChange={(e) => setOfferForm({ ...offerForm, showSignature: e.target.checked })} />
-              <span>Tambahkan tanda tangan & stempel <span className="text-zinc-400 font-normal">— memakai gambar tanda tangan dan stempel dari Profil usaha (Pengaturan)</span></span>
+              <span>{tr("offerSignature")} <span className="text-zinc-400 font-normal">{tr("offerSignatureHint")}</span></span>
             </label>
           </div>
           <div className="mt-5 space-y-2">
-            <button onClick={sendOfferWhatsApp} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3.5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 shadow">Kirim via WhatsApp</button>
+            <button onClick={sendOfferWhatsApp} className="w-full bg-[#25d366] hover:opacity-90 px-5 py-3.5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 shadow">{tr("sendWa")}</button>
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={previewOffer} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Preview</button>
-              <button onClick={downloadOffer} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
+              <button onClick={previewOffer} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("previewBtn")}</button>
+              <button onClick={downloadOffer} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("downloadPdf")}</button>
             </div>
           </div>
-          <p className="text-xs text-zinc-400 mt-3">Kop surat dan tarif mengikuti profil usaha aktif dan daftar harga jasa (Pengaturan). Nomor surat otomatis berurutan per usaha. Kirim via WhatsApp membagikan file PDF langsung lewat lembar berbagi perangkat; bila tidak didukung, dibuka chat wa.me ke nomor pelanggan dengan ringkasan tarif.</p>
+          <p className="text-xs text-zinc-400 mt-3">{tr("offerHint")}</p>
         </Modal>
       )}
 
@@ -3109,7 +3130,7 @@ export default function Home() {
         <div className="fixed inset-0 z-[70] bg-panel flex flex-col" role="dialog" aria-modal="true" aria-label={offerEditField.label}>
           <div className="flex justify-between items-center gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))] border-b border-line shrink-0">
             <h2 className="font-bold text-lg">{offerEditField.label}</h2>
-            <button onClick={() => setOfferEditField(null)} aria-label="Tutup editor" className="bg-zinc-800 w-9 h-9 rounded-full font-bold shrink-0">×</button>
+            <button onClick={() => setOfferEditField(null)} aria-label={tr("closeEditor")} className="bg-zinc-800 w-9 h-9 rounded-full font-bold shrink-0">×</button>
           </div>
           <div className="flex-1 min-h-0 p-4">
             <textarea
@@ -3121,7 +3142,7 @@ export default function Home() {
             />
           </div>
           <div className="p-4 pt-0 pb-[max(1rem,env(safe-area-inset-bottom))] shrink-0">
-            <button onClick={() => setOfferEditField(null)} className="w-full bg-accent hover-bg-accent-dark text-white font-bold py-3.5 rounded-full">Selesai</button>
+            <button onClick={() => setOfferEditField(null)} className="w-full bg-accent hover-bg-accent-dark text-white font-bold py-3.5 rounded-full">{tr("scheduleDone")}</button>
           </div>
         </div>
       )}
@@ -3132,7 +3153,7 @@ export default function Home() {
         const rows = form.rows.filter((r) => r.checked);
         const placeDate = [form.place, formatDateId(form.date)].filter(Boolean).join(", ");
         return (
-        <Modal title="Preview Surat Penawaran" onClose={closeOfferPreview}>
+        <Modal lang={lang} title={tr("offerPreviewTitle")} onClose={closeOfferPreview}>
           <div className="relative bg-white text-black rounded-xl overflow-hidden border border-line text-sm">
             <div className="relative z-10 p-4">
               <div className="flex gap-3 items-start">
@@ -3181,44 +3202,44 @@ export default function Home() {
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <button onClick={downloadOffer} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">Unduh PDF</button>
-            <button onClick={sendOfferWhatsApp} className="bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-white text-sm">Kirim via WhatsApp</button>
+            <button onClick={downloadOffer} className="bg-zinc-800 px-5 py-3 rounded-xl font-bold text-sm">{tr("downloadPdf")}</button>
+            <button onClick={sendOfferWhatsApp} className="bg-[#25d366] hover:opacity-90 px-5 py-3 rounded-xl font-bold text-white text-sm">{tr("sendWa")}</button>
           </div>
         </Modal>
         );
       })()}
 
       {showBusinessModal && (
-        <Modal title="Tambah usaha" onClose={() => setShowBusinessModal(false)}>
+        <Modal lang={lang} title={tr("addBusinessTitle")} onClose={() => setShowBusinessModal(false)}>
           <form onSubmit={submitBusiness} className="space-y-4">
             <div>
-              <label className="font-bold text-sm">Nama usaha *</label>
-              <input className="mt-1" required placeholder="cth: Jasa Sedot WC Andro"
+              <label className="font-bold text-sm">{tr("businessName")}</label>
+              <input className="mt-1" required placeholder={tr("businessNamePh")}
                 value={businessForm.business_name} onChange={(e) => setBusinessForm({ ...businessForm, business_name: e.target.value })} />
             </div>
             <div>
-              <label className="font-bold text-sm">Alamat</label>
+              <label className="font-bold text-sm">{tr("businessAddress")}</label>
               <input className="mt-1" value={businessForm.business_address} onChange={(e) => setBusinessForm({ ...businessForm, business_address: e.target.value })} />
             </div>
             <div>
-              <label className="font-bold text-sm">No. telepon / WhatsApp</label>
+              <label className="font-bold text-sm">{tr("businessPhone")}</label>
               <input className="mt-1" inputMode="tel" value={businessForm.business_phone} onChange={(e) => setBusinessForm({ ...businessForm, business_phone: e.target.value })} />
             </div>
             {businessError && <p className="text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm">{businessError}</p>}
-            <button type="submit" className="w-full bg-accent hover-bg-accent-dark text-white font-bold py-3.5 rounded-full">Buat usaha</button>
+            <button type="submit" className="w-full bg-accent hover-bg-accent-dark text-white font-bold py-3.5 rounded-full">{tr("createBusiness")}</button>
           </form>
         </Modal>
       )}
 
-      <nav className="fixed left-1/2 -translate-x-1/2 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex items-end gap-1 bg-panel border border-line rounded-full px-1.5 py-1.5 shadow-2xl shadow-black/60 w-[calc(100vw-24px)] max-w-md" aria-label="Navigasi utama">
-        {dockBtn("dashboard", "Dashboard", icon(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>))}
-        {dockBtn("customers", "Pelanggan", icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>))}
-        <button onClick={handleAddNew} aria-label="Tambah catatan baru"
+      <nav className="fixed left-1/2 -translate-x-1/2 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex items-end gap-1 bg-panel border border-line rounded-full px-1.5 py-1.5 shadow-2xl shadow-black/60 w-[calc(100vw-24px)] max-w-md" aria-label={tr("mainNavAria")}>
+        {dockBtn("dashboard", tr("dashboard"), icon(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>))}
+        {dockBtn("customers", tr("customers"), icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3 3.2-4.5 6.5-4.5S15 17 15.8 20" /></>))}
+        <button onClick={handleAddNew} aria-label={tr("addRecordAria")}
           className="mx-1 -mt-8 w-14 h-14 rounded-full bg-accent hover-bg-accent-dark text-white flex items-center justify-center shadow-lg shadow-black/50 shrink-0">
           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         </button>
-        {dockBtn("jobs", "Transaksi", icon(<><path d="M5 3h14v18H5z" /><path d="M8 7h8M8 11h8M8 15h5" /></>))}
-        {dockBtn("reports", "Laporan", icon(<><path d="M4 20V10M10 20V4M16 20v-8M22 20H2" /></>))}
+        {dockBtn("jobs", tr("jobs"), icon(<><path d="M5 3h14v18H5z" /><path d="M8 7h8M8 11h8M8 15h5" /></>))}
+        {dockBtn("reports", tr("reports"), icon(<><path d="M4 20V10M10 20V4M16 20v-8M22 20H2" /></>))}
       </nav>
     </main>
     </>

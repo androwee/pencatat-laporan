@@ -1,20 +1,35 @@
+// Grafik dashboard (ringan, tanpa library) + pill status transaksi.
+import { tr as trRaw } from "../i18n";
+
+const L = (lang) => (lang === "en" ? "en" : "id");
+
 export function fmtRp(n) {
   return "Rp" + new Intl.NumberFormat("id-ID").format(Number(n || 0));
 }
 
 const STATUS_META = {
-  lunas: { label: "Lunas", color: "#22c55e" },
-  dp: { label: "DP", color: "#f59e0b" },
-  belum: { label: "Belum bayar", color: "#EA580C" },
+  lunas: { color: "#22c55e" },
+  dp: { color: "#f59e0b" },
+  belum: { color: "#EA580C" },
 };
 
-export function BarChart({ labels, values, onSelect }) {
+const STATUS_LABEL_KEY = {
+  lunas: "statusPaid",
+  dp: "statusDp",
+  belum: "statusUnpaid",
+};
+
+export function statusLabel(status, lang) {
+  return trRaw(L(lang), STATUS_LABEL_KEY[status] || "statusUnpaid");
+}
+
+export function BarChart({ labels, values, onSelect, lang }) {
   const max = Math.max(0, ...values);
-  if (!values.length || !max) return <p className="text-sm text-zinc-400">Belum ada data pada periode ini.</p>;
+  if (!values.length || !max) return <p className="text-sm text-zinc-400">{trRaw(L(lang), "noDataPeriod")}</p>;
   const W = 600, H = 220, padB = 34, padT = 30;
   const bw = Math.min(48, (W - 16 - 6 * (values.length - 1)) / values.length);
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Grafik batang pemasukan">
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={trRaw(L(lang), "chartBarAria")}>
       {values.map((v, i) => {
         const bh = ((v / max) * (H - padT - padB));
         const x = 8 + i * (bw + 6);
@@ -33,15 +48,15 @@ export function BarChart({ labels, values, onSelect }) {
   );
 }
 
-export function DonutChart({ parts, onSelect }) {
+export function DonutChart({ parts, onSelect, lang }) {
   const total = parts.reduce((s, p) => s + p.value, 0);
-  if (!total) return <p className="text-sm text-zinc-400">Belum ada data pada periode ini.</p>;
+  if (!total) return <p className="text-sm text-zinc-400">{trRaw(L(lang), "noDataPeriod")}</p>;
   const R = 70, C = 2 * Math.PI * R;
   let offset = 0;
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="relative w-48 h-48">
-        <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90" role="img" aria-label="Grafik donat status pembayaran">
+        <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90" role="img" aria-label={trRaw(L(lang), "chartDonutAria")}>
           <circle cx="100" cy="100" r={R} fill="none" stroke="currentColor" strokeWidth="26" className="donut-track" />
           {parts.map((p) => {
             const len = (p.value / total) * C;
@@ -59,7 +74,7 @@ export function DonutChart({ parts, onSelect }) {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-6">
           <div className="font-black text-lg leading-tight break-words">{fmtRp(total)}</div>
-          <div className="text-xs text-zinc-400">Total periode</div>
+          <div className="text-xs text-zinc-400">{trRaw(L(lang), "totalPeriod")}</div>
         </div>
       </div>
       <div className="flex flex-wrap gap-3 justify-center text-sm">
@@ -76,9 +91,9 @@ export function DonutChart({ parts, onSelect }) {
   );
 }
 
-export function HBarChart({ rows }) {
+export function HBarChart({ rows, lang }) {
   const max = Math.max(0, ...rows.map((r) => Number(r.total)));
-  if (!rows.length || !max) return <p className="text-sm text-zinc-400">Belum ada data pada periode ini.</p>;
+  if (!rows.length || !max) return <p className="text-sm text-zinc-400">{trRaw(L(lang), "noDataPeriod")}</p>;
   return (
     <div className="space-y-3">
       {rows.map((r) => (
@@ -94,18 +109,18 @@ export function HBarChart({ rows }) {
   );
 }
 
-export function statusPill(status) {
-  const meta = STATUS_META[status] || { label: status, color: "#a1a1aa" };
+export function statusPill(status, lang) {
+  const meta = STATUS_META[status] || { color: "#a1a1aa" };
   const cls = status === "lunas" ? "bg-emerald-500/15 text-emerald-400"
     : status === "dp" ? "bg-amber-500/15 text-amber-400" : "bg-orange-500/15 text-orange-400";
-  return <span className={`inline-block self-start shrink-0 px-3 py-0.5 rounded-full text-xs font-bold ${cls}`}>{meta.label}</span>;
+  return <span className={`inline-block self-start shrink-0 px-3 py-0.5 rounded-full text-xs font-bold ${cls}`}>{statusLabel(status, lang)}</span>;
 }
 
-export function statusParts(totals) {
+export function statusParts(totals, lang) {
   return [
-    { label: "Lunas", value: Number(totals.total_lunas || 0), color: "#22c55e" },
-    { label: "DP", value: Number(totals.total_dp || 0), color: "#f59e0b" },
-    { label: "Belum bayar", value: Number(totals.total_belum || 0), color: "#EA580C" },
+    { label: trRaw(L(lang), "statusPaid"), value: Number(totals.total_lunas || 0), color: "#22c55e" },
+    { label: trRaw(L(lang), "statusDp"), value: Number(totals.total_dp || 0), color: "#f59e0b" },
+    { label: trRaw(L(lang), "statusUnpaid"), value: Number(totals.total_belum || 0), color: "#EA580C" },
   ];
 }
 
