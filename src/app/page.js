@@ -1877,7 +1877,7 @@ export default function Home() {
   const profileMenu = (side) => showProfileMenu && (
     <>
       <button aria-label="Tutup menu profil" onClick={() => { setInstallHelp(false); setShowProfileMenu(false); }} className="fixed inset-0 z-40 cursor-default" />
-      <div className={`absolute ${side === "left" ? "left-0" : "right-0"} top-full mt-2 w-56 bg-panel border border-line rounded-2xl shadow-2xl p-2 z-50`}>
+      <div className={`absolute ${side === "left" ? "left-0" : "right-0"} top-full mt-2 w-56 bg-panel border border-line rounded-2xl shadow-2xl p-2 z-50 profile-menu`}>
         <p className="text-xs text-zinc-400 px-3 py-2">Login sebagai {username}</p>
         {activeBusiness && <p className="text-xs text-zinc-400 px-3 pb-1">Usaha: <span className="font-bold">{activeBusiness.name}</span></p>}
         {businesses.length > 1 && businesses.map((b) => (

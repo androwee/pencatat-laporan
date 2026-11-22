@@ -127,6 +127,12 @@ input[type="month"]::-webkit-calendar-picker-indicator {
    supaya kontras di atas kartu gelap. */
 .dash-num { color: #ffffff; }
 .theme-light .dash-num { color: var(--accent); }
+/* Menu profil: teks mengikuti tema. Menu ini dirender di dalam header
+   (text-white), jadi tanpa aturan ini teks item menunya putih di kedua
+   mode — di mode terang tenggelam di atas panel putih. */
+.profile-menu { color: #fafafa; }
+.theme-light .profile-menu { color: #111827; }
+
 .theme-light .bg-panel {
   background: #ffffff;
 }
