@@ -2402,7 +2402,10 @@ export default function Home() {
               <p className="text-sm text-zinc-400 mt-0.5">Versi 1.0.0</p>
             </div>
             <p className="text-sm text-zinc-400 text-left">Catat pelanggan jasa, transaksi, dan pantau pemasukan harian serta bulanan — semua dalam satu tempat. Buat invoice dan kwitansi, kirim tagihan via WhatsApp, dan kelola beberapa usaha dalam satu akun.</p>
-            <a href="https://trakteer.id/andro_id3" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm">☕ Dukung pengembang di Trakteer</a>
+            <div className="space-y-2">
+              <a href="https://github.com/androwee/pencatat-laporan" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 bg-zinc-800 px-5 py-2.5 rounded-xl font-bold text-sm">Kode sumber di GitHub</a>
+              <a href="https://trakteer.id/andro_id3" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-accent hover-bg-accent-dark px-5 py-2.5 rounded-xl font-bold text-sm">☕ Dukung pengembang di Trakteer</a>
+            </div>
             <p className="text-xs text-zinc-500">© 2026 Pencatat Laporan</p>
           </div>
         </Modal>
